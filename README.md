@@ -7,8 +7,9 @@
 Sebuah chatbot WhatsApp sederhana yang berfungsi sebagai asisten pencatat keuangan pribadi. Chatbot ini terintegrasi dengan Supabase sebagai backend untuk menyimpan data pengguna, kategori, transaksi, dan log aktivitas.
 
 
-*(Anda bisa mengganti link gambar di atas dengan screenshot atau GIF demo proyek Anda)*
+![Bantuan](https://github.com/fahroediin/whatsapp-cashflow-bot/blob/main/images/bantuan.png)
 
+![Cek Cashflow Harian](https://github.com/fahroediin/whatsapp-cashflow-bot/blob/main/images/cek%20harian.png)
 ---
 
 ## ✨ Fitur Utama
