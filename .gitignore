@@ -8,5 +8,5 @@
 *.log
 
 # Build output
-/wwebjs_auth/
-/wwebjs_cache/
+.wwebjs_auth/
+.wwebjs_cache/
