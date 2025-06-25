@@ -47,8 +47,8 @@ Ikuti langkah-langkah berikut untuk menjalankan bot ini di lingkungan lokal Anda
 ### 2. Kloning Repository
 
 ```bash
-git clone https://github.com/nama-anda/nama-repo-anda.git
-cd nama-repo-anda
+git clone https://github.com/fahroediin/whatsapp-cashflow-bot.git
+cd whatsapp-cashflow-bot
 ```
 
 ### 3. Instalasi Dependensi
