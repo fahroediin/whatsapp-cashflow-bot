@@ -10,8 +10,9 @@ const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currenc
 // --- STATE MANAGEMENT untuk Fitur Edit, Hapus, & Reset ---
 const userState = {};
 
+// --- PERBAIKAN: Fungsi parsing nominal yang lebih cerdas untuk desimal ---
 /**
- * Mengubah string nominal yang fleksibel (e.g., "50.000", "50rb", "1.5jt") menjadi angka integer.
+ * Mengubah string nominal yang fleksibel (e.g., "50.000", "50rb", "1.5jt", "1,9juta") menjadi angka integer.
  * @param {string} nominalStr String nominal dari input user.
  * @returns {number|null} Angka integer jika valid, atau null jika tidak valid.
  */
@@ -19,22 +20,41 @@ function parseNominal(nominalStr) {
     if (!nominalStr) return null;
 
     try {
-        let cleanStr = nominalStr.toLowerCase()
-            .replace(/(\d+[,.]?\d*)\s*(juta|jt)/g, (match, p1) => p1.replace(/[,.]/g, '') + '000000')
-            .replace(/(\d+[,.]?\d*)\s*(ribu|rb|k)/g, (match, p1) => p1.replace(/[,.]/g, '') + '000');
-            
-        cleanStr = cleanStr.replace(/\D/g, '');
+        let str = nominalStr.toLowerCase().trim();
+        let multiplier = 1;
 
-        if (cleanStr === '') return null;
+        // Langkah 1: Deteksi dan pisahkan suffix, tentukan multiplier
+        if (str.includes('juta') || str.includes('jt')) {
+            multiplier = 1000000;
+            str = str.replace(/juta|jt/g, '').trim();
+        } else if (str.includes('ribu') || str.includes('rb') || str.includes('k')) {
+            multiplier = 1000;
+            str = str.replace(/ribu|rb|k/g, '').trim();
+        }
 
-        const value = parseInt(cleanStr, 10);
-        return isNaN(value) ? null : value;
+        // Langkah 2: Normalisasi koma desimal menjadi titik
+        str = str.replace(',', '.');
+
+        // Langkah 3: Jika ada lebih dari satu titik, anggap semua adalah pemisah ribuan dan hapus
+        const dotCount = (str.match(/\./g) || []).length;
+        if (dotCount > 1) {
+            str = str.replace(/\./g, '');
+        }
+
+        // Langkah 4: Parse sebagai float dan kalikan
+        const value = parseFloat(str);
+        if (isNaN(value)) {
+            return null;
+        }
+
+        return Math.round(value * multiplier);
 
     } catch (error) {
         console.error("Error parsing nominal:", error);
         return null;
     }
 }
+// --- AKHIR PERBAIKAN ---
 
 function createTableRow(kategori, nominal, catatan) {
     const KATEGORI_WIDTH = 12;
@@ -151,8 +171,8 @@ async function handleBantuan(msg, userName) {
                      `Gunakan format: \`kategori nominal [catatan]\`\n` +
                      `Contoh:\n`+
                      `  • \`makanan 15000 nasi padang\`\n`+
-                     `  • \`gaji 5jt\`\n`+
-                     `  • \`jajan 12.500 kopi\`\n\n` +
+                     `  • \`gaji 5jt\` atau \`gaji 1,5jt\`\n`+
+                     `  • \`jajan 12.500\` atau \`jajan 12,5k\`\n\n` +
                      `*2. Cek Laporan Keuangan* 📈\n` +
                      `Gunakan format: \`cek [periode] [opsi]\`\n` +
                      `Periode: \`harian\`, \`mingguan\`, \`bulanan\`, \`tahunan\`\n` +
@@ -172,7 +192,6 @@ async function handleBantuan(msg, userName) {
     msg.reply(helpText);
 }
 
-// --- PERBAIKAN: Alur Reset ---
 async function handleReset(msg, user) {
     await logActivity(user.id, msg.from, 'Mulai Reset Data', msg.body);
     
@@ -187,7 +206,6 @@ async function handleReset(msg, user) {
     
     msg.reply(warningText);
 }
-// --- AKHIR PERBAIKAN ---
 
 async function handleHapus(msg, user) {
     await logActivity(user.id, msg.from, 'Mulai Hapus Transaksi', msg.body);
@@ -276,7 +294,6 @@ async function handleEdit(msg, user) {
     msg.reply(infoText);
 }
 
-// --- PERBAIKAN: Alur Konfirmasi Reset ---
 async function handleInteractiveSteps(msg, user, userName) {
     const state = userState[msg.from];
     const messageBody = msg.body.trim();
@@ -297,7 +314,7 @@ async function handleInteractiveSteps(msg, user, userName) {
                 msg.reply("Reset dibatalkan. Data Anda aman. 😊");
                 return;
             }
-            // Konfirmasi kedua yang lebih menantang dan jelas
+            
             state.step = 'awaiting_final_reset_confirmation';
             const finalWarningText = `*KONFIRMASI AKHIR* ‼️\n\n` +
                                      `Ini adalah kesempatan terakhir Anda untuk membatalkan. ` +
@@ -316,7 +333,6 @@ async function handleInteractiveSteps(msg, user, userName) {
                 return;
             }
 
-            // Eksekusi reset
             await logActivity(user.id, userNumber, 'Eksekusi Reset', 'Menghapus semua transaksi pengguna.');
             const { error: deleteError } = await supabase
                 .from('transaksi')
@@ -333,7 +349,6 @@ async function handleInteractiveSteps(msg, user, userName) {
             
             delete userState[userNumber];
             break;
-// --- AKHIR PERBAIKAN ---
 
         case 'awaiting_delete_choice':
             const choiceIndex = parseInt(messageBody, 10) - 1;
@@ -383,7 +398,7 @@ async function handleInteractiveSteps(msg, user, userName) {
             const newNominal = parseNominal(messageBody);
             if (newNominal === null) {
                 await logActivity(user.id, userNumber, 'Gagal Edit', `Nominal baru tidak valid: ${messageBody}`);
-                msg.reply("❌ Format nominal tidak valid. Harap masukkan angka (contoh: 50000, 50rb, 1jt).");
+                msg.reply("❌ Format nominal tidak valid. Harap masukkan angka (contoh: 50000, 50rb, 1.5jt).");
                 return;
             }
             state.data.new_nominal = newNominal;
