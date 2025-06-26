@@ -15,15 +15,15 @@ Tampilan di Whatsapp Desktop v
 
 ## ✨ Fitur Utama
 
-- **📝 Pencatatan Transaksi**: Catat pemasukan dan pengeluaran dengan format sederhana.
-- **📊 Laporan Keuangan**: Dapatkan ringkasan dan detail transaksi untuk periode harian, mingguan, bulanan, dan tahunan.
-- **📋 Tampilan Tabel**: Rincian laporan disajikan dalam format tabel (monospace) yang rapi dan mudah dibaca.
+- **📝 Pencatatan Transaksi Fleksibel**: Catat pemasukan dan pengeluaran dengan format sederhana dan parsing nominal yang cerdas (misal: `15000`, `15rb`, `1.5jt`).
+- **📊 Laporan Keuangan Dinamis**: Dapatkan ringkasan dan detail transaksi untuk periode harian, mingguan, bulanan (termasuk bulan-bulan sebelumnya), dan tahunan.
+- **💰 Saldo Kumulatif**: Laporan harian menampilkan saldo kumulatif untuk memberikan konteks keuangan total.
+- **✏️ Edit Transaksi**: Fitur interaktif untuk mengubah nominal atau catatan dari transaksi terakhir yang salah diinput.
+- **🗑️ Hapus Transaksi**: Fitur interaktif untuk menghapus transaksi dari daftar bulan berjalan.
 - **🛡️ Validasi Saldo**: Mencegah pencatatan pengeluaran jika saldo tidak mencukupi.
-- **✏️ Edit Transaksi**: Fitur untuk mengubah nominal atau catatan dari transaksi terakhir yang salah diinput.
-- **📜 Log Aktivitas**: Semua interaksi pengguna dicatat di database untuk keperluan pemantauan dan audit.
+- **📜 Log Aktivitas**: Semua interaksi pengguna dicatat di database untuk keperluan pemantauan.
 - **👤 Manajemen User Otomatis**: Pengguna baru otomatis terdaftar saat pertama kali berinteraksi.
 - **🎨 UI Emoji**: Penggunaan emoji yang tematik untuk meningkatkan pengalaman pengguna.
-
 ---
 
 ## 🔧 Teknologi yang Digunakan
