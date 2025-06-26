@@ -7,7 +7,7 @@ console.log("Inisialisasi DuitQ...");
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 
-// --- STATE MANAGEMENT untuk Fitur Edit & Hapus ---
+// --- STATE MANAGEMENT untuk Fitur Edit, Hapus, & Reset ---
 const userState = {};
 
 /**
@@ -118,6 +118,9 @@ client.on('message', async (msg) => {
             case 'hapus':
                 await handleHapus(msg, user);
                 break;
+            case 'reset':
+                await handleReset(msg, user);
+                break;
             default:
                 await handleTransaksi(msg, user, messageBody);
                 break;
@@ -155,18 +158,33 @@ async function handleBantuan(msg, userName) {
                      `Periode: \`harian\`, \`mingguan\`, \`bulanan\`, \`tahunan\`\n` +
                      `Contoh:\n` +
                      `  • \`cek harian\`\n` +
-                     `  • \`cek mingguan\`\n` +
-                     `  • \`cek bulanan\` (untuk bulan ini)\n` +
                      `  • \`cek bulanan mei 2024\`\n\n` +
                      `*3. Ubah Transaksi Terakhir* ✏️\n` +
                      `Ketik: \`edit\` atau \`ubah\`\n\n` +
                      `*4. Hapus Transaksi* 🗑️\n` +
-                     `Ketik: \`hapus\` untuk melihat daftar transaksi bulan ini yang bisa dihapus.\n\n` +
+                     `Ketik: \`hapus\` untuk memilih transaksi bulan ini yang akan dihapus.\n\n` +
+                     `*5. Reset Semua Data* ⚠️\n` +
+                     `Ketik: \`reset\` untuk menghapus *SEMUA* data transaksi Anda secara permanen. Gunakan dengan sangat hati-hati!\n\n` +
                      `---\n\n` +
                      `*KATEGORI PEMASUKAN* 📥\n${incomeCategories}\n\n` +
                      `*KATEGORI PENGELUARAN* 📤\n${expenseCategories}`;
     
     msg.reply(helpText);
+}
+
+async function handleReset(msg, user) {
+    await logActivity(user.id, msg.from, 'Mulai Reset Data', msg.body);
+    
+    userState[msg.from] = {
+        step: 'awaiting_reset_confirmation'
+    };
+
+    const warningText = `*PERINGATAN KERAS!* ⚠️\n\n` +
+                        `Anda akan menghapus *SEMUA DATA TRANSAKSI* Anda secara permanen. Tindakan ini *TIDAK BISA DIBATALKAN*.\n\n` +
+                        `Jika Anda benar-benar yakin, balas pesan ini dengan kata \`ya, saya yakin\`.\n\n` +
+                        `Ketik *batal* atau kata lain untuk membatalkan.`;
+    
+    msg.reply(warningText);
 }
 
 async function handleHapus(msg, user) {
@@ -269,6 +287,49 @@ async function handleInteractiveSteps(msg, user, userName) {
     }
 
     switch (state.step) {
+        case 'awaiting_reset_confirmation':
+            if (messageBody.toLowerCase() !== 'ya, saya yakin') {
+                await logActivity(user.id, userNumber, 'Reset Dibatalkan', `Input tidak sesuai: ${messageBody}`);
+                delete userState[userNumber];
+                msg.reply("Reset dibatalkan. Data Anda aman. 😊");
+                return;
+            }
+            // Konfirmasi kedua
+            state.step = 'awaiting_final_reset_confirmation';
+            const finalWarningText = `*KONFIRMASI AKHIR* ‼️\n\nIni adalah kesempatan terakhir Anda untuk membatalkan. ` +
+                                     `Untuk melanjutkan, ketik frasa berikut *persis* seperti ini:\n\n` +
+                                     `*reset data saya sekarang*\n\n` +
+                                     `Salah ketik akan membatalkan proses ini.`;
+            await logActivity(user.id, userNumber, 'Proses Reset', 'Meminta konfirmasi final.');
+            msg.reply(finalWarningText);
+            break;
+
+        case 'awaiting_final_reset_confirmation':
+            if (messageBody.toLowerCase() !== 'reset data saya sekarang') {
+                await logActivity(user.id, userNumber, 'Reset Dibatalkan (Final)', `Input tidak sesuai: ${messageBody}`);
+                delete userState[userNumber];
+                msg.reply("Reset dibatalkan. Data Anda tetap aman. Fiuh! 😮‍💨");
+                return;
+            }
+
+            // Eksekusi reset
+            await logActivity(user.id, userNumber, 'Eksekusi Reset', 'Menghapus semua transaksi pengguna.');
+            const { error: deleteError } = await supabase
+                .from('transaksi')
+                .delete()
+                .eq('id_user', user.id);
+
+            if (deleteError) {
+                await logActivity(user.id, userNumber, 'Error Reset Data', deleteError.message);
+                msg.reply("Maaf, terjadi kesalahan teknis saat mencoba mereset data Anda. Silakan coba lagi nanti.");
+            } else {
+                await logActivity(user.id, userNumber, 'Sukses Reset Data', 'Semua transaksi telah dihapus.');
+                msg.reply("✅ *Reset Berhasil!* Semua data transaksi Anda telah dihapus secara permanen. Anda bisa memulai pencatatan dari awal.");
+            }
+            
+            delete userState[userNumber];
+            break;
+
         case 'awaiting_delete_choice':
             const choiceIndex = parseInt(messageBody, 10) - 1;
             if (isNaN(choiceIndex) || choiceIndex < 0 || choiceIndex >= state.transactions.length) {
@@ -279,13 +340,13 @@ async function handleInteractiveSteps(msg, user, userName) {
 
             const txToDelete = state.transactions[choiceIndex];
             
-            const { error } = await supabase
+            const { error: singleDeleteError } = await supabase
                 .from('transaksi')
                 .delete()
                 .eq('id', txToDelete.id);
 
-            if (error) {
-                await logActivity(user.id, userNumber, 'Error Hapus Transaksi', `ID: ${txToDelete.id}, Error: ${error.message}`);
+            if (singleDeleteError) {
+                await logActivity(user.id, userNumber, 'Error Hapus Transaksi', `ID: ${txToDelete.id}, Error: ${singleDeleteError.message}`);
                 msg.reply("Maaf, terjadi kesalahan saat menghapus transaksi. Silakan coba lagi.");
             } else {
                 await logActivity(user.id, userNumber, 'Sukses Hapus Transaksi', `ID: ${txToDelete.id}, Detail: ${JSON.stringify(txToDelete)}`);
@@ -404,7 +465,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             endDate = new Date(now);
             endDate.setHours(23, 59, 59, 999);
 
-            // Query 1: Ambil semua transaksi untuk saldo kumulatif
             const { data: allTransactions, error: allError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
@@ -424,7 +484,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoKumulatif = totalPemasukanKumulatif - totalPengeluaranKumulatif;
             
-            // Query 2: Ambil transaksi hari ini saja untuk rincian dan total harian
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
@@ -444,7 +503,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 return;
             }
 
-            // --- PERBAIKAN: Hitung total harian secara terpisah ---
             let totalPemasukanHarian = 0;
             let totalPengeluaranHarian = 0;
             const incomeDetailsDaily = [], expenseDetailsDaily = [];
@@ -479,7 +537,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             
             msg.reply(reportTextHarian);
             return;
-            // --- AKHIR PERBAIKAN ---
 
         case 'mingguan':
             startDate = new Date(now);
