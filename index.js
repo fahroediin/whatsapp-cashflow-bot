@@ -172,6 +172,7 @@ async function handleBantuan(msg, userName) {
     msg.reply(helpText);
 }
 
+// --- PERBAIKAN: Alur Reset ---
 async function handleReset(msg, user) {
     await logActivity(user.id, msg.from, 'Mulai Reset Data', msg.body);
     
@@ -181,11 +182,12 @@ async function handleReset(msg, user) {
 
     const warningText = `*PERINGATAN KERAS!* ⚠️\n\n` +
                         `Anda akan menghapus *SEMUA DATA TRANSAKSI* Anda secara permanen. Tindakan ini *TIDAK BISA DIBATALKAN*.\n\n` +
-                        `Jika Anda benar-benar yakin, balas pesan ini dengan kata \`ya, saya yakin\`.\n\n` +
+                        `Jika Anda benar-benar yakin, balas pesan ini dengan kata *YA*.\n\n` +
                         `Ketik *batal* atau kata lain untuk membatalkan.`;
     
     msg.reply(warningText);
 }
+// --- AKHIR PERBAIKAN ---
 
 async function handleHapus(msg, user) {
     await logActivity(user.id, msg.from, 'Mulai Hapus Transaksi', msg.body);
@@ -274,6 +276,7 @@ async function handleEdit(msg, user) {
     msg.reply(infoText);
 }
 
+// --- PERBAIKAN: Alur Konfirmasi Reset ---
 async function handleInteractiveSteps(msg, user, userName) {
     const state = userState[msg.from];
     const messageBody = msg.body.trim();
@@ -288,17 +291,18 @@ async function handleInteractiveSteps(msg, user, userName) {
 
     switch (state.step) {
         case 'awaiting_reset_confirmation':
-            if (messageBody.toLowerCase() !== 'ya, saya yakin') {
+            if (messageBody.toLowerCase() !== 'ya') {
                 await logActivity(user.id, userNumber, 'Reset Dibatalkan', `Input tidak sesuai: ${messageBody}`);
                 delete userState[userNumber];
                 msg.reply("Reset dibatalkan. Data Anda aman. 😊");
                 return;
             }
-            // Konfirmasi kedua
+            // Konfirmasi kedua yang lebih menantang dan jelas
             state.step = 'awaiting_final_reset_confirmation';
-            const finalWarningText = `*KONFIRMASI AKHIR* ‼️\n\nIni adalah kesempatan terakhir Anda untuk membatalkan. ` +
-                                     `Untuk melanjutkan, ketik frasa berikut *persis* seperti ini:\n\n` +
-                                     `*reset data saya sekarang*\n\n` +
+            const finalWarningText = `*KONFIRMASI AKHIR* ‼️\n\n` +
+                                     `Ini adalah kesempatan terakhir Anda untuk membatalkan. ` +
+                                     `Untuk melanjutkan, salin dan tempel (copy-paste) atau ketik teks di bawah ini *persis* tanpa tanda kutip:\n\n` +
+                                     `\`\`\`reset data saya sekarang\`\`\`\n\n` +
                                      `Salah ketik akan membatalkan proses ini.`;
             await logActivity(user.id, userNumber, 'Proses Reset', 'Meminta konfirmasi final.');
             msg.reply(finalWarningText);
@@ -329,6 +333,7 @@ async function handleInteractiveSteps(msg, user, userName) {
             
             delete userState[userNumber];
             break;
+// --- AKHIR PERBAIKAN ---
 
         case 'awaiting_delete_choice':
             const choiceIndex = parseInt(messageBody, 10) - 1;
