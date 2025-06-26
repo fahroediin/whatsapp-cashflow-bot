@@ -7,7 +7,7 @@ console.log("Inisialisasi DuitQ...");
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 
-// --- STATE MANAGEMENT untuk Fitur Edit ---
+// --- STATE MANAGEMENT untuk Fitur Edit & Hapus ---
 const userState = {};
 
 /**
@@ -20,12 +20,9 @@ function parseNominal(nominalStr) {
 
     try {
         let cleanStr = nominalStr.toLowerCase()
-            // Ganti "juta" atau "jt" dengan 6 nol
             .replace(/(\d+[,.]?\d*)\s*(juta|jt)/g, (match, p1) => p1.replace(/[,.]/g, '') + '000000')
-            // Ganti "ribu" atau "rb" atau "k" dengan 3 nol
             .replace(/(\d+[,.]?\d*)\s*(ribu|rb|k)/g, (match, p1) => p1.replace(/[,.]/g, '') + '000');
             
-        // Hapus semua karakter non-digit untuk membersihkan sisa format (seperti 50.000 atau 50,000)
         cleanStr = cleanStr.replace(/\D/g, '');
 
         if (cleanStr === '') return null;
@@ -118,6 +115,9 @@ client.on('message', async (msg) => {
             case 'ubah':
                 await handleEdit(msg, user);
                 break;
+            case 'hapus':
+                await handleHapus(msg, user);
+                break;
             default:
                 await handleTransaksi(msg, user, messageBody);
                 break;
@@ -157,15 +157,62 @@ async function handleBantuan(msg, userName) {
                      `  • \`cek harian\`\n` +
                      `  • \`cek mingguan\`\n` +
                      `  • \`cek bulanan\` (untuk bulan ini)\n` +
-                     `  • \`cek bulanan mei\` (bulan Mei tahun ini)\n` +
-                     `  • \`cek bulanan 5 2023\` (bulan 5 tahun 2023)\n\n` +
+                     `  • \`cek bulanan mei 2024\`\n\n` +
                      `*3. Ubah Transaksi Terakhir* ✏️\n` +
                      `Ketik: \`edit\` atau \`ubah\`\n\n` +
+                     `*4. Hapus Transaksi* 🗑️\n` +
+                     `Ketik: \`hapus\` untuk melihat daftar transaksi bulan ini yang bisa dihapus.\n\n` +
                      `---\n\n` +
                      `*KATEGORI PEMASUKAN* 📥\n${incomeCategories}\n\n` +
                      `*KATEGORI PENGELUARAN* 📤\n${expenseCategories}`;
     
     msg.reply(helpText);
+}
+
+async function handleHapus(msg, user) {
+    await logActivity(user.id, msg.from, 'Mulai Hapus Transaksi', msg.body);
+    
+    const now = new Date();
+    const startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+    const { data: transactions, error } = await supabase
+        .from('transaksi')
+        .select(`id, tanggal, nominal, catatan, kategori (nama_kategori, tipe)`)
+        .eq('id_user', user.id)
+        .gte('tanggal', startDate.toISOString())
+        .lte('tanggal', endDate.toISOString())
+        .order('tanggal', { ascending: false });
+
+    if (error) {
+        await logActivity(user.id, msg.from, 'Error Hapus', `Gagal fetch tx: ${error.message}`);
+        msg.reply("Maaf, gagal mengambil daftar transaksi. Coba lagi nanti.");
+        return;
+    }
+
+    if (transactions.length === 0) {
+        await logActivity(user.id, msg.from, 'Info Hapus', 'Tidak ada transaksi bulan ini');
+        msg.reply("Tidak ada transaksi yang tercatat di bulan ini untuk dihapus.");
+        return;
+    }
+
+    userState[msg.from] = {
+        step: 'awaiting_delete_choice',
+        transactions: transactions
+    };
+
+    let listText = "Pilih transaksi yang ingin Anda hapus dengan mengirimkan nomornya:\n\n";
+    transactions.forEach((tx, index) => {
+        const tgl = new Date(tx.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+        const tipeEmoji = tx.kategori.tipe === 'INCOME' ? '📥' : '📤';
+        listText += `*${index + 1}.* ${tipeEmoji} [${tgl}] ${tx.kategori.nama_kategori} - ${formatCurrency(tx.nominal)}\n`;
+        if (tx.catatan) {
+            listText += `   Catatan: _${tx.catatan}_\n`;
+        }
+    });
+
+    listText += "\nKetik *batal* untuk membatalkan.";
+    msg.reply(listText);
 }
 
 async function handleEdit(msg, user) {
@@ -215,13 +262,39 @@ async function handleInteractiveSteps(msg, user, userName) {
     const userNumber = msg.from;
 
     if (messageBody.toLowerCase() === 'batal') {
-        await logActivity(user.id, userNumber, 'Sesi Interaktif Dibatalkan', `Langkah: ${state.step}, Pilihan: ${state.choice || 'N/A'}`);
+        await logActivity(user.id, userNumber, 'Sesi Interaktif Dibatalkan', `Langkah: ${state.step}`);
         delete userState[userNumber];
         msg.reply("Oke, sesi dibatalkan. 👍");
         return;
     }
 
     switch (state.step) {
+        case 'awaiting_delete_choice':
+            const choiceIndex = parseInt(messageBody, 10) - 1;
+            if (isNaN(choiceIndex) || choiceIndex < 0 || choiceIndex >= state.transactions.length) {
+                await logActivity(user.id, userNumber, 'Gagal Hapus', `Pilihan tidak valid: ${messageBody}`);
+                msg.reply("Pilihan tidak valid. Harap kirim nomor yang ada di daftar.");
+                return;
+            }
+
+            const txToDelete = state.transactions[choiceIndex];
+            
+            const { error } = await supabase
+                .from('transaksi')
+                .delete()
+                .eq('id', txToDelete.id);
+
+            if (error) {
+                await logActivity(user.id, userNumber, 'Error Hapus Transaksi', `ID: ${txToDelete.id}, Error: ${error.message}`);
+                msg.reply("Maaf, terjadi kesalahan saat menghapus transaksi. Silakan coba lagi.");
+            } else {
+                await logActivity(user.id, userNumber, 'Sukses Hapus Transaksi', `ID: ${txToDelete.id}, Detail: ${JSON.stringify(txToDelete)}`);
+                msg.reply(`✅ Transaksi "${txToDelete.kategori.nama_kategori} - ${formatCurrency(txToDelete.nominal)}" berhasil dihapus.`);
+            }
+
+            delete userState[userNumber];
+            break;
+
         case 'awaiting_edit_choice':
             if (!['1', '2', '3'].includes(messageBody)) {
                 await logActivity(user.id, userNumber, 'Gagal Edit', `Pilihan tidak valid: ${messageBody}`);
@@ -234,7 +307,7 @@ async function handleInteractiveSteps(msg, user, userName) {
             if (messageBody === '1' || messageBody === '3') {
                 state.step = 'awaiting_new_nominal';
                 msg.reply("Masukkan nominal baru:");
-            } else { // Pilihan 2 (hanya catatan)
+            } else {
                 state.step = 'awaiting_new_catatan';
                 msg.reply("Masukkan catatan baru (ketik - jika ingin dihapus):");
             }
