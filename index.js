@@ -404,6 +404,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             endDate = new Date(now);
             endDate.setHours(23, 59, 59, 999);
 
+            // Query 1: Ambil semua transaksi untuk saldo kumulatif
             const { data: allTransactions, error: allError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
@@ -423,6 +424,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoKumulatif = totalPemasukanKumulatif - totalPengeluaranKumulatif;
             
+            // Query 2: Ambil transaksi hari ini saja untuk rincian dan total harian
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
@@ -442,11 +444,20 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 return;
             }
 
+            // --- PERBAIKAN: Hitung total harian secara terpisah ---
+            let totalPemasukanHarian = 0;
+            let totalPengeluaranHarian = 0;
             const incomeDetailsDaily = [], expenseDetailsDaily = [];
+
             dailyTransactions.forEach(t => {
                 const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan);
-                if (t.kategori.tipe === 'INCOME') incomeDetailsDaily.push(rowText);
-                else expenseDetailsDaily.push(rowText);
+                if (t.kategori.tipe === 'INCOME') {
+                    totalPemasukanHarian += t.nominal;
+                    incomeDetailsDaily.push(rowText);
+                } else {
+                    totalPengeluaranHarian += t.nominal;
+                    expenseDetailsDaily.push(rowText);
+                }
             });
 
             let reportTextHarian = `📊 *Laporan Harian & Saldo Kumulatif*\n\n` +
@@ -454,11 +465,21 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                              `📤 *Total Pengeluaran (Kumulatif):*\n   ${formatCurrency(totalPengeluaranKumulatif)}\n\n` +
                              `--------------------\n` +
                              `✨ *Saldo Akhir (Kumulatif):*\n   *${formatCurrency(saldoKumulatif)}*\n` +
-                             `--------------------\n`;
+                             `--------------------\n\n`;
+
+            if (totalPemasukanHarian > 0) {
+                reportTextHarian += `📥 *Total Pemasukan Hari Ini:*\n   *${formatCurrency(totalPemasukanHarian)}*\n`;
+            }
+            if (totalPengeluaranHarian > 0) {
+                reportTextHarian += `📤 *Total Pengeluaran Hari Ini:*\n   *${formatCurrency(totalPengeluaranHarian)}*\n`;
+            }
+            
             if (incomeDetailsDaily.length > 0) { reportTextHarian += `\n*RINCIAN HARI INI (Pemasukan)* 📥\n` + "```\n" + incomeDetailsDaily.join('\n') + "\n```"; }
             if (expenseDetailsDaily.length > 0) { reportTextHarian += `\n*RINCIAN HARI INI (Pengeluaran)* 📤\n` + "```\n" + expenseDetailsDaily.join('\n') + "\n```"; }
+            
             msg.reply(reportTextHarian);
             return;
+            // --- AKHIR PERBAIKAN ---
 
         case 'mingguan':
             startDate = new Date(now);
