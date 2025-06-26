@@ -191,11 +191,16 @@ Interaksi dengan bot dilakukan melalui perintah-perintah berikut:
 
 ```
 .
-├── node_modules/
-├── .env                  # Menyimpan kunci rahasia (TIDAK di-commit)
-├── .gitignore            # Mengabaikan file yang tidak perlu di-commit
-├── index.js              # Logika utama chatbot
+├── handlers/
+│   ├── commandHandler.js    # Logika untuk setiap perintah (cek, edit, hapus, reset)
+│   ├── interactiveHandler.js # Logika untuk step-by-step interaktif
+│   └── transactionHandler.js  # Logika untuk mencatat transaksi baru
+├── utils/
+│   ├── currency.js          # Fungsi formatCurrency dan parseNominal
+│   └── db.js                # Fungsi terkait Supabase (log, getUser, dll)
+├── .env
+├── .gitignore
+├── index.js                 # File utama, sebagai "router" dan inisialisasi client
 ├── package.json
-├── package-lock.json
-└── supabaseClient.js     # Konfigurasi koneksi ke Supabase
+└── supabaseClient.js
 ```
