@@ -158,7 +158,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
         
         default:
             const now = new Date();
-            let startDate, endDate, reportTitle;
+            let startDate, endDate, reportTitle, dateFormatType;
             if (periode === 'mingguan') {
                 startDate = new Date(now);
                 const day = startDate.getDay();
@@ -169,6 +169,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 endDate.setDate(startDate.getDate() + 6);
                 endDate.setHours(23, 59, 59, 999);
                 reportTitle = "Laporan Mingguan";
+                dateFormatType = 'date';
             } else if (periode === 'bulanan') {
                 const monthArg = parts[2];
                 const yearArg = parts[3] ? parseInt(parts[3], 10) : now.getFullYear();
@@ -193,6 +194,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 startDate.setHours(0, 0, 0, 0);
                 endDate.setHours(23, 59, 59, 999);
                 reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
+                dateFormatType = 'date';
             } else if (periode === 'tahunan') {
                 const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : now.getFullYear();
                 if (isNaN(targetAnnualYear)) {
@@ -202,6 +204,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 startDate = new Date(targetAnnualYear, 0, 1, 0, 0, 0, 0);
                 endDate = new Date(targetAnnualYear, 11, 31, 23, 59, 59, 999);
                 reportTitle = `Laporan Tahunan (${targetAnnualYear})`;
+                dateFormatType = 'date';
             } else {
                 await logActivity(user.id, msg.from, 'Gagal Cek Laporan', `Periode tidak valid: ${periode}.`);
                 msg.reply(`❌ Periode "${periode}" tidak valid. Pilih antara: *harian, mingguan, bulanan, tahunan*.`);
@@ -228,7 +231,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             let totalPemasukan = 0, totalPengeluaran = 0;
             const incomeDetails = [], expenseDetails = [];
             transactions.forEach(t => {
-                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'date');
+                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, dateFormatType);
                 if (t.kategori.tipe === 'INCOME') { 
                     totalPemasukan += t.nominal; 
                     incomeDetails.push(rowText); 

@@ -48,28 +48,24 @@ function createTableRow(kategori, nominal, catatan, tanggalString, format = 'tim
     let datePrefix = '';
 
     if (tanggalString) {
-        // Pisahkan tanggal dan waktu dari string, misal: "2025-06-28 02:14:19.784757+07"
-        const [datePart, timePartWithOffset] = tanggalString.split(' ');
-
-        if (format === 'time' && timePartWithOffset) {
-            // Ambil 5 karakter pertama dari bagian waktu (HH:mm)
-            const time = timePartWithOffset.substring(0, 5);
+        const dateObj = new Date(tanggalString);
+        if (format === 'time') {
+            // Format HANYA WAKTU: [HH:mm]
+            const time = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             datePrefix = `[${time}] `;
-        } else if (format === 'date' && datePart) {
-            // Ambil bagian tanggal, pisahkan, dan format ulang ke DD/MM
-            const [year, month, day] = datePart.split('-');
-            datePrefix = `[${day}/${month}] `;
+        } else if (format === 'date') {
+            // Format HANYA TANGGAL: [DD/MM]
+            const date = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', timeZone: 'Asia/Jakarta' });
+            datePrefix = `[${date}] `;
         }
     }
     
-    let kategoriCol = kategori.length > KATEGORI_WIDTH ? kategori.substring(0, KATEGORI_WIDTH - 1) + '…' : kategori;
-    let nominalCol = formatCurrency(nominal);
-    
-    // Gabungkan prefix tanggal dengan kategori, lalu ratakan
-    // [HH:mm] = 7 chars, [DD/MM] = 7 chars.
-    let leftCol = `${datePrefix}${kategoriCol}`.padEnd(KATEGORI_WIDTH + (datePrefix ? 7 : 0));
-    
-    nominalCol = nominalCol.padEnd(NOMINAL_WIDTH);
+    // Kolom kiri (Tanggal + Kategori)
+    let leftCol = `${datePrefix}${kategori}`;
+    leftCol = leftCol.padEnd(KATEGORI_WIDTH + 8); // 8 untuk [HH:mm] atau [DD/MM] + spasi
+
+    // Kolom tengah (Nominal)
+    let nominalCol = formatCurrency(nominal).padEnd(NOMINAL_WIDTH);
 
     return `${leftCol}${nominalCol}${catatan || ''}`;
 }
