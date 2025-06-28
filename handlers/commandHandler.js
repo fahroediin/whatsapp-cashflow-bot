@@ -102,7 +102,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoBulanIni = totalPemasukanBulanIni - totalPengeluaranBulanIni;
             
-            // Minta kolom 'tanggal' dari database
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`tanggal, nominal, catatan, kategori (nama_kategori, tipe)`)
@@ -127,7 +126,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             const incomeDetailsDaily = [], expenseDetailsDaily = [];
 
             dailyTransactions.forEach(t => {
-                // Gunakan format 'time' untuk laporan harian
                 const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'time');
                 if (t.kategori.tipe === 'INCOME') {
                     totalPemasukanHarian += t.nominal;
@@ -210,7 +208,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 return;
             }
 
-            // Minta kolom 'tanggal' dari database
             const { data: transactions, error } = await supabase
                 .from('transaksi')
                 .select(`tanggal, nominal, catatan, kategori (nama_kategori, tipe)`)
@@ -221,7 +218,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
             if (error) { 
                 await logActivity(user.id, msg.from, 'Error Cek Laporan', error.message); 
-                console.error("Error fetching transactions:", error); 
                 msg.reply("Gagal mengambil data laporan."); 
                 return; 
             }
@@ -232,7 +228,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             let totalPemasukan = 0, totalPengeluaran = 0;
             const incomeDetails = [], expenseDetails = [];
             transactions.forEach(t => {
-                // Gunakan format 'date' untuk laporan lainnya
                 const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'date');
                 if (t.kategori.tipe === 'INCOME') { 
                     totalPemasukan += t.nominal; 

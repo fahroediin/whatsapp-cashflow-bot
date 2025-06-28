@@ -2,14 +2,8 @@
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 
-/**
- * Mengubah string nominal yang fleksibel (e.g., "50.000", "50rb", "1.5jt", "1,9juta") menjadi angka integer.
- * @param {string} nominalStr String nominal dari input user.
- * @returns {number|null} Angka integer jika valid, atau null jika tidak valid.
- */
 function parseNominal(nominalStr) {
     if (!nominalStr) return null;
-
     try {
         let str = nominalStr.toLowerCase().trim();
         let multiplier = 1;
@@ -23,7 +17,6 @@ function parseNominal(nominalStr) {
         }
 
         str = str.replace(',', '.');
-
         const dotCount = (str.match(/\./g) || []).length;
         if (dotCount > 1) {
             str = str.replace(/\./g, '');
@@ -33,9 +26,7 @@ function parseNominal(nominalStr) {
         if (isNaN(value)) {
             return null;
         }
-
         return Math.round(value * multiplier);
-
     } catch (error) {
         console.error("Error parsing nominal:", error);
         return null;
@@ -48,7 +39,7 @@ function parseNominal(nominalStr) {
  * @param {number} nominal Jumlah nominal.
  * @param {string|null} catatan Catatan transaksi.
  * @param {string|null} tanggalString String tanggal dari database.
- * @param {'time'|'date'|'full'} format Tipe format waktu yang ditampilkan.
+ * @param {'time'|'date'} format Tipe format waktu yang ditampilkan.
  * @returns {string} Baris teks yang sudah diformat.
  */
 function createTableRow(kategori, nominal, catatan, tanggalString, format = 'time') {
@@ -57,13 +48,17 @@ function createTableRow(kategori, nominal, catatan, tanggalString, format = 'tim
     let datePrefix = '';
 
     if (tanggalString) {
-        const dateObj = new Date(tanggalString);
-        if (format === 'time') {
-            // Format hanya waktu: HH:mm
-            datePrefix = `[${dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}] `;
-        } else if (format === 'date') {
-            // Format tanggal pendek: DD/MM
-            datePrefix = `[${dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit' })}] `;
+        // Pisahkan tanggal dan waktu dari string, misal: "2025-06-28 02:14:19.784757+07"
+        const [datePart, timePartWithOffset] = tanggalString.split(' ');
+
+        if (format === 'time' && timePartWithOffset) {
+            // Ambil 5 karakter pertama dari bagian waktu (HH:mm)
+            const time = timePartWithOffset.substring(0, 5);
+            datePrefix = `[${time}] `;
+        } else if (format === 'date' && datePart) {
+            // Ambil bagian tanggal, pisahkan, dan format ulang ke DD/MM
+            const [year, month, day] = datePart.split('-');
+            datePrefix = `[${day}/${month}] `;
         }
     }
     
@@ -71,7 +66,8 @@ function createTableRow(kategori, nominal, catatan, tanggalString, format = 'tim
     let nominalCol = formatCurrency(nominal);
     
     // Gabungkan prefix tanggal dengan kategori, lalu ratakan
-    let leftCol = `${datePrefix}${kategoriCol}`.padEnd(KATEGORI_WIDTH + (datePrefix ? 8 : 0));
+    // [HH:mm] = 7 chars, [DD/MM] = 7 chars.
+    let leftCol = `${datePrefix}${kategoriCol}`.padEnd(KATEGORI_WIDTH + (datePrefix ? 7 : 0));
     
     nominalCol = nominalCol.padEnd(NOMINAL_WIDTH);
 
