@@ -62,44 +62,26 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
     switch (periode) {
         case 'harian':
-            // --- START PERBAIKAN DEFINITIF ---
-            
-            // 1. Buat objek Date yang secara spesifik merepresentasikan waktu di Jakarta.
-            // Intl.DateTimeFormat adalah cara standar dan andal untuk ini.
             const formatter = new Intl.DateTimeFormat('en-CA', {
                 timeZone: 'Asia/Jakarta',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
+                year: 'numeric', month: '2-digit', day: '2-digit',
             });
             const partsArr = formatter.formatToParts(new Date());
             const dateParts = {};
-            for (const part of partsArr) {
-                if(part.type !== 'literal') {
-                    dateParts[part.type] = part.value;
-                }
-            }
+            for (const part of partsArr) { if(part.type !== 'literal') { dateParts[part.type] = part.value; } }
+            const todayStr = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
 
-            const todayStr = `${dateParts.year}-${dateParts.month}-${dateParts.day}`; // e.g., "2025-06-28"
-            
-            // Buat tanggal besok untuk batas atas query
-            const todayDate = new Date(`${todayStr}T00:00:00.000+07:00`); // Pastikan date object juga berbasis WIB
+            const todayDate = new Date(`${todayStr}T00:00:00.000+07:00`);
             const tomorrowDate = new Date(todayDate);
             tomorrowDate.setDate(todayDate.getDate() + 1);
             
             const tomorrowPartsArr = formatter.formatToParts(tomorrowDate);
             const tomorrowDateParts = {};
-             for (const part of tomorrowPartsArr) {
-                if(part.type !== 'literal') {
-                    tomorrowDateParts[part.type] = part.value;
-                }
-            }
-            const tomorrowStr = `${tomorrowDateParts.year}-${tomorrowDateParts.month}-${tomorrowDateParts.day}`; // e.g., "2025-06-29"
+            for (const part of tomorrowPartsArr) { if(part.type !== 'literal') { tomorrowDateParts[part.type] = part.value; } }
+            const tomorrowStr = `${tomorrowDateParts.year}-${tomorrowDateParts.month}-${tomorrowDateParts.day}`;
 
-            // Buat tanggal awal bulan
             const startOfMonthStr = `${dateParts.year}-${dateParts.month}-01`;
 
-            // 2. Query untuk saldo bulan ini
             const { data: monthlyTransactions, error: balanceError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
@@ -120,10 +102,10 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoBulanIni = totalPemasukanBulanIni - totalPengeluaranBulanIni;
             
-            // 3. Query untuk rincian HARI INI SAJA
+            // Minta kolom 'tanggal' dari database
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
-                .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
+                .select(`tanggal, nominal, catatan, kategori (nama_kategori, tipe)`)
                 .eq('id_user', user.id)
                 .gte('tanggal', todayStr)
                 .lt('tanggal', tomorrowStr)
@@ -145,7 +127,8 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             const incomeDetailsDaily = [], expenseDetailsDaily = [];
 
             dailyTransactions.forEach(t => {
-                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan);
+                // Gunakan format 'time' untuk laporan harian
+                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'time');
                 if (t.kategori.tipe === 'INCOME') {
                     totalPemasukanHarian += t.nominal;
                     incomeDetailsDaily.push(rowText);
@@ -175,9 +158,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             msg.reply(reportTextHarian);
             return;
         
-        // Kasus lain tetap menggunakan logika lama yang sudah berjalan
         default:
-            // Logika untuk 'mingguan', 'bulanan', 'tahunan'
             const now = new Date();
             let startDate, endDate, reportTitle;
             if (periode === 'mingguan') {
@@ -229,9 +210,10 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 return;
             }
 
+            // Minta kolom 'tanggal' dari database
             const { data: transactions, error } = await supabase
                 .from('transaksi')
-                .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
+                .select(`tanggal, nominal, catatan, kategori (nama_kategori, tipe)`)
                 .eq('id_user', user.id)
                 .gte('tanggal', startDate.toISOString())
                 .lte('tanggal', endDate.toISOString())
@@ -239,6 +221,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
             if (error) { 
                 await logActivity(user.id, msg.from, 'Error Cek Laporan', error.message); 
+                console.error("Error fetching transactions:", error); 
                 msg.reply("Gagal mengambil data laporan."); 
                 return; 
             }
@@ -249,7 +232,8 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             let totalPemasukan = 0, totalPengeluaran = 0;
             const incomeDetails = [], expenseDetails = [];
             transactions.forEach(t => {
-                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan);
+                // Gunakan format 'date' untuk laporan lainnya
+                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'date');
                 if (t.kategori.tipe === 'INCOME') { 
                     totalPemasukan += t.nominal; 
                     incomeDetails.push(rowText); 
