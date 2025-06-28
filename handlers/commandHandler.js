@@ -52,10 +52,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
         return;
     }
 
-    const now = new Date();
-    let startDate, endDate;
-    let reportTitle = `Laporan Keuangan ${periode.charAt(0).toUpperCase() + periode.slice(1)}`;
-
     const monthMap = {
         januari: 0, feb: 1, februari: 1, mar: 2, maret: 2, apr: 3, april: 3,
         mei: 4, jun: 5, juni: 5, jul: 6, juli: 6, agu: 7, agustus: 7,
@@ -66,26 +62,50 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
     switch (periode) {
         case 'harian':
-            // --- START PERBAIKAN KEMBALI KE DASAR ---
+            // --- START PERBAIKAN DEFINITIF ---
             
-            // 1. Tentukan awal dan akhir hari ini secara lokal
-            const startOfToday = new Date();
-            startOfToday.setHours(0, 0, 0, 0);
+            // 1. Buat objek Date yang secara spesifik merepresentasikan waktu di Jakarta.
+            // Intl.DateTimeFormat adalah cara standar dan andal untuk ini.
+            const formatter = new Intl.DateTimeFormat('en-CA', {
+                timeZone: 'Asia/Jakarta',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+            });
+            const partsArr = formatter.formatToParts(new Date());
+            const dateParts = {};
+            for (const part of partsArr) {
+                if(part.type !== 'literal') {
+                    dateParts[part.type] = part.value;
+                }
+            }
 
-            const endOfToday = new Date();
-            endOfToday.setHours(23, 59, 59, 999);
+            const todayStr = `${dateParts.year}-${dateParts.month}-${dateParts.day}`; // e.g., "2025-06-28"
+            
+            // Buat tanggal besok untuk batas atas query
+            const todayDate = new Date(`${todayStr}T00:00:00.000+07:00`); // Pastikan date object juga berbasis WIB
+            const tomorrowDate = new Date(todayDate);
+            tomorrowDate.setDate(todayDate.getDate() + 1);
+            
+            const tomorrowPartsArr = formatter.formatToParts(tomorrowDate);
+            const tomorrowDateParts = {};
+             for (const part of tomorrowPartsArr) {
+                if(part.type !== 'literal') {
+                    tomorrowDateParts[part.type] = part.value;
+                }
+            }
+            const tomorrowStr = `${tomorrowDateParts.year}-${tomorrowDateParts.month}-${tomorrowDateParts.day}`; // e.g., "2025-06-29"
 
-            // 2. Tentukan awal bulan ini untuk kalkulasi saldo
-            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-            startOfMonth.setHours(0, 0, 0, 0);
+            // Buat tanggal awal bulan
+            const startOfMonthStr = `${dateParts.year}-${dateParts.month}-01`;
 
-            // 3. Ambil transaksi BULAN INI untuk saldo
+            // 2. Query untuk saldo bulan ini
             const { data: monthlyTransactions, error: balanceError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', startOfMonth.toISOString())
-                .lte('tanggal', endOfToday.toISOString());
+                .gte('tanggal', startOfMonthStr)
+                .lt('tanggal', tomorrowStr);
 
             if (balanceError) {
                 await logActivity(user.id, msg.from, 'Error Cek Saldo Bulanan', balanceError.message);
@@ -100,16 +120,14 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoBulanIni = totalPemasukanBulanIni - totalPengeluaranBulanIni;
             
-            // 4. Ambil transaksi HARI INI SAJA untuk rincian
+            // 3. Query untuk rincian HARI INI SAJA
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', startOfToday.toISOString())
-                .lte('tanggal', endOfToday.toISOString())
+                .gte('tanggal', todayStr)
+                .lt('tanggal', tomorrowStr)
                 .order('tanggal', { ascending: false });
-
-            // --- END PERBAIKAN ---
 
             if (dailyError) {
                 await logActivity(user.id, msg.from, 'Error Cek Laporan Harian', dailyError.message);
@@ -156,111 +174,104 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             
             msg.reply(reportTextHarian);
             return;
-
-        case 'mingguan':
-            startDate = new Date(now);
-            const day = startDate.getDay();
-            const diff = startDate.getDate() - day + (day === 0 ? -6 : 1); // Senin sebagai awal minggu
-            startDate.setDate(diff);
-            startDate.setHours(0, 0, 0, 0);
-
-            endDate = new Date(startDate);
-            endDate.setDate(startDate.getDate() + 6);
-            endDate.setHours(23, 59, 59, 999);
-            break;
-
-        case 'bulanan':
-            const monthArg = parts[2];
-            const yearArg = parts[3] ? parseInt(parts[3], 10) : now.getFullYear();
-            let targetYear = isNaN(yearArg) ? now.getFullYear() : yearArg;
-            let targetMonth;
-
-            if (monthArg) {
-                if (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12) {
-                    targetMonth = monthArg - 1;
+        
+        // Kasus lain tetap menggunakan logika lama yang sudah berjalan
+        default:
+            // Logika untuk 'mingguan', 'bulanan', 'tahunan'
+            const now = new Date();
+            let startDate, endDate, reportTitle;
+            if (periode === 'mingguan') {
+                startDate = new Date(now);
+                const day = startDate.getDay();
+                const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
+                startDate.setDate(diff);
+                startDate.setHours(0, 0, 0, 0);
+                endDate = new Date(startDate);
+                endDate.setDate(startDate.getDate() + 6);
+                endDate.setHours(23, 59, 59, 999);
+                reportTitle = "Laporan Mingguan";
+            } else if (periode === 'bulanan') {
+                const monthArg = parts[2];
+                const yearArg = parts[3] ? parseInt(parts[3], 10) : now.getFullYear();
+                let targetYear = isNaN(yearArg) ? now.getFullYear() : yearArg;
+                let targetMonth;
+                if (monthArg) {
+                    if (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12) {
+                        targetMonth = monthArg - 1;
+                    } else {
+                        targetMonth = monthMap[monthArg.toLowerCase()];
+                    }
+                    if (targetMonth === undefined) {
+                        msg.reply(`❌ Bulan "${monthArg}" tidak valid.`);
+                        return;
+                    }
+                    startDate = new Date(targetYear, targetMonth, 1);
+                    endDate = new Date(targetYear, targetMonth + 1, 0);
                 } else {
-                    targetMonth = monthMap[monthArg.toLowerCase()];
+                    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+                    endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
                 }
-                if (targetMonth === undefined) {
-                    msg.reply(`❌ Bulan "${monthArg}" tidak valid.`);
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
+            } else if (periode === 'tahunan') {
+                const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : now.getFullYear();
+                if (isNaN(targetAnnualYear)) {
+                    msg.reply(`❌ Format tahun "${parts[2]}" tidak valid.`);
                     return;
                 }
-                startDate = new Date(targetYear, targetMonth, 1);
-                endDate = new Date(targetYear, targetMonth + 1, 0); // Ambil hari terakhir di bulan tsb
+                startDate = new Date(targetAnnualYear, 0, 1, 0, 0, 0, 0);
+                endDate = new Date(targetAnnualYear, 11, 31, 23, 59, 59, 999);
+                reportTitle = `Laporan Tahunan (${targetAnnualYear})`;
             } else {
-                startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-            }
-            startDate.setHours(0, 0, 0, 0);
-            endDate.setHours(23, 59, 59, 999);
-            reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
-            break;
-
-        case 'tahunan':
-            const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : now.getFullYear();
-            if (isNaN(targetAnnualYear)) {
-                msg.reply(`❌ Format tahun "${parts[2]}" tidak valid.`);
+                await logActivity(user.id, msg.from, 'Gagal Cek Laporan', `Periode tidak valid: ${periode}.`);
+                msg.reply(`❌ Periode "${periode}" tidak valid. Pilih antara: *harian, mingguan, bulanan, tahunan*.`);
                 return;
             }
-            startDate = new Date(targetAnnualYear, 0, 1);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(targetAnnualYear, 11, 31);
-            endDate.setHours(23, 59, 59, 999);
-            reportTitle = `Laporan Tahunan (${targetAnnualYear})`;
+
+            const { data: transactions, error } = await supabase
+                .from('transaksi')
+                .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
+                .eq('id_user', user.id)
+                .gte('tanggal', startDate.toISOString())
+                .lte('tanggal', endDate.toISOString())
+                .order('tanggal', { ascending: false });
+
+            if (error) { 
+                await logActivity(user.id, msg.from, 'Error Cek Laporan', error.message); 
+                msg.reply("Gagal mengambil data laporan."); 
+                return; 
+            }
+            if (transactions.length === 0) { 
+                msg.reply(`Tidak ada transaksi yang tercatat untuk periode ${reportTitle}. 😊`); 
+                return; 
+            }
+            let totalPemasukan = 0, totalPengeluaran = 0;
+            const incomeDetails = [], expenseDetails = [];
+            transactions.forEach(t => {
+                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan);
+                if (t.kategori.tipe === 'INCOME') { 
+                    totalPemasukan += t.nominal; 
+                    incomeDetails.push(rowText); 
+                } else { 
+                    totalPengeluaran += t.nominal; 
+                    expenseDetails.push(rowText); 
+                }
+            });
+            const sisaUangPeriode = totalPemasukan - totalPengeluaran;
+            let reportText = `📊 *${reportTitle}*\n\n` +
+                            `📥 *Total Pemasukan (Periode Ini):*\n   ${formatCurrency(totalPemasukan)}\n\n` +
+                            `📤 *Total Pengeluaran (Periode Ini):*\n   ${formatCurrency(totalPengeluaran)}\n\n` +
+                            `--------------------\n` +
+                            `✨ *Selisih (Periode Ini):*\n   *${formatCurrency(sisaUangPeriode)}*\n` +
+                            `--------------------\n`;
+            if (incomeDetails.length > 0) { reportText += `\n*RINCIAN PEMASUKAN* 📥\n` + "```\n" + incomeDetails.join('\n') + "\n```"; }
+            if (expenseDetails.length > 0) { reportText += `\n*RINCIAN PENGELUARAN* 📤\n` + "```\n" + expenseDetails.join('\n') + "\n```"; }
+            msg.reply(reportText);
             break;
-
-        default:
-            await logActivity(user.id, msg.from, 'Gagal Cek Laporan', `Periode tidak valid: ${periode}.`);
-            msg.reply(`❌ Periode "${periode}" tidak valid. Pilih antara: *harian, mingguan, bulanan, tahunan*.`);
-            return;
     }
-    
-    const { data: transactions, error } = await supabase
-        .from('transaksi')
-        .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
-        .eq('id_user', user.id)
-        .gte('tanggal', startDate.toISOString())
-        .lte('tanggal', endDate.toISOString())
-        .order('tanggal', { ascending: false });
-
-    if (error) { 
-        await logActivity(user.id, msg.from, 'Error Cek Laporan', error.message); 
-        console.error("Error fetching transactions:", error); 
-        msg.reply("Gagal mengambil data laporan."); 
-        return; 
-    }
-    
-    await logActivity(user.id, msg.from, 'Cek Laporan', `Periode: ${periode}`);
-    if (transactions.length === 0) { 
-        await logActivity(user.id, msg.from, 'Info Cek Laporan', `Tidak ada transaksi untuk periode ${periode}`);
-        msg.reply(`Tidak ada transaksi yang tercatat untuk periode ${reportTitle}. 😊`); 
-        return; 
-    }
-
-    let totalPemasukan = 0, totalPengeluaran = 0;
-    const incomeDetails = [], expenseDetails = [];
-    transactions.forEach(t => {
-        const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan);
-        if (t.kategori.tipe === 'INCOME') { 
-            totalPemasukan += t.nominal; 
-            incomeDetails.push(rowText); 
-        } else { 
-            totalPengeluaran += t.nominal; 
-            expenseDetails.push(rowText); 
-        }
-    });
-    const sisaUangPeriode = totalPemasukan - totalPengeluaran;
-    
-    let reportText = `📊 *${reportTitle}*\n\n` +
-                     `📥 *Total Pemasukan (Periode Ini):*\n   ${formatCurrency(totalPemasukan)}\n\n` +
-                     `📤 *Total Pengeluaran (Periode Ini):*\n   ${formatCurrency(totalPengeluaran)}\n\n` +
-                     `--------------------\n` +
-                     `✨ *Selisih (Periode Ini):*\n   *${formatCurrency(sisaUangPeriode)}*\n` +
-                     `--------------------\n`;
-    if (incomeDetails.length > 0) { reportText += `\n*RINCIAN PEMASUKAN* 📥\n` + "```\n" + incomeDetails.join('\n') + "\n```"; }
-    if (expenseDetails.length > 0) { reportText += `\n*RINCIAN PENGELUARAN* 📤\n` + "```\n" + expenseDetails.join('\n') + "\n```"; }
-    msg.reply(reportText);
 }
+
 
 // Edit (Tidak ada perubahan)
 async function handleEdit(msg, user, userState) {
