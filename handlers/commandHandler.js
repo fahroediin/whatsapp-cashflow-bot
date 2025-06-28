@@ -43,15 +43,6 @@ async function handleBantuan(msg, userName) {
     msg.reply(helpText);
 }
 
-// Fungsi bantuan untuk memformat tanggal ke YYYY-MM-DD
-function toYYYYMMDD(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-
 // Cek Keuangan
 async function handleCekKeuangan(msg, user, parts, originalMessage) {
     const periode = parts[1];
@@ -75,28 +66,26 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
     switch (periode) {
         case 'harian':
-            // --- START PERBAIKAN FINAL (TANPA RPC) ---
-
-            // 1. Tentukan tanggal hari ini dan besok
-            const today = new Date();
-            const tomorrow = new Date(today);
-            tomorrow.setDate(today.getDate() + 1);
-
-            // Format tanggal ke YYYY-MM-DD
-            const todayStr = toYYYYMMDD(today);
-            const tomorrowStr = toYYYYMMDD(tomorrow);
+            // --- START PERBAIKAN KEMBALI KE DASAR ---
             
-            // 2. Tentukan awal bulan ini
-            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-            const startOfMonthStr = toYYYYMMDD(startOfMonth);
+            // 1. Tentukan awal dan akhir hari ini secara lokal
+            const startOfToday = new Date();
+            startOfToday.setHours(0, 0, 0, 0);
 
-            // 3. Ambil transaksi BULAN INI untuk menghitung saldo
+            const endOfToday = new Date();
+            endOfToday.setHours(23, 59, 59, 999);
+
+            // 2. Tentukan awal bulan ini untuk kalkulasi saldo
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            startOfMonth.setHours(0, 0, 0, 0);
+
+            // 3. Ambil transaksi BULAN INI untuk saldo
             const { data: monthlyTransactions, error: balanceError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', startOfMonthStr)
-                .lt('tanggal', tomorrowStr);
+                .gte('tanggal', startOfMonth.toISOString())
+                .lte('tanggal', endOfToday.toISOString());
 
             if (balanceError) {
                 await logActivity(user.id, msg.from, 'Error Cek Saldo Bulanan', balanceError.message);
@@ -111,13 +100,13 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoBulanIni = totalPemasukanBulanIni - totalPengeluaranBulanIni;
             
-            // 4. Ambil transaksi HARI INI SAJA untuk ditampilkan rinciannya
+            // 4. Ambil transaksi HARI INI SAJA untuk rincian
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', todayStr)
-                .lt('tanggal', tomorrowStr)
+                .gte('tanggal', startOfToday.toISOString())
+                .lte('tanggal', endOfToday.toISOString())
                 .order('tanggal', { ascending: false });
 
             // --- END PERBAIKAN ---
@@ -169,18 +158,15 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             return;
 
         case 'mingguan':
-            // Logika untuk mingguan juga diperbaiki agar lebih andal
-            const startOfWeek = new Date(now);
-            const day = startOfWeek.getDay();
-            const diff = startOfWeek.getDate() - day + (day === 0 ? -6 : 1); // Senin sebagai awal minggu
-            startOfWeek.setDate(diff);
-            
-            const endOfWeek = new Date(startOfWeek);
-            endOfWeek.setDate(startOfWeek.getDate() + 7);
+            startDate = new Date(now);
+            const day = startDate.getDay();
+            const diff = startDate.getDate() - day + (day === 0 ? -6 : 1); // Senin sebagai awal minggu
+            startDate.setDate(diff);
+            startDate.setHours(0, 0, 0, 0);
 
-            startDate = toYYYYMMDD(startOfWeek);
-            endDate = toYYYYMMDD(endOfWeek);
-            reportTitle = "Laporan Mingguan";
+            endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() + 6);
+            endDate.setHours(23, 59, 59, 999);
             break;
 
         case 'bulanan':
@@ -200,16 +186,14 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                     return;
                 }
                 startDate = new Date(targetYear, targetMonth, 1);
-                endDate = new Date(targetYear, targetMonth + 1, 1);
-                reportTitle = `Laporan Bulanan (${monthNames[targetMonth]} ${targetYear})`;
+                endDate = new Date(targetYear, targetMonth + 1, 0); // Ambil hari terakhir di bulan tsb
             } else {
                 startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-                reportTitle = `Laporan Bulanan (Bulan Ini)`;
+                endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0);
             }
-            // Konversi ke string YYYY-MM-DD
-            startDate = toYYYYMMDD(startDate);
-            endDate = toYYYYMMDD(endDate);
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setHours(23, 59, 59, 999);
+            reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
             break;
 
         case 'tahunan':
@@ -218,8 +202,10 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 msg.reply(`❌ Format tahun "${parts[2]}" tidak valid.`);
                 return;
             }
-            startDate = `${targetAnnualYear}-01-01`;
-            endDate = `${targetAnnualYear + 1}-01-01`;
+            startDate = new Date(targetAnnualYear, 0, 1);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(targetAnnualYear, 11, 31);
+            endDate.setHours(23, 59, 59, 999);
             reportTitle = `Laporan Tahunan (${targetAnnualYear})`;
             break;
 
@@ -229,13 +215,12 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             return;
     }
     
-    // Query yang disatukan untuk 'mingguan', 'bulanan', 'tahunan'
     const { data: transactions, error } = await supabase
         .from('transaksi')
         .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
         .eq('id_user', user.id)
-        .gte('tanggal', startDate) // Menggunakan string YYYY-MM-DD
-        .lt('tanggal', endDate)   // Menggunakan string YYYY-MM-DD
+        .gte('tanggal', startDate.toISOString())
+        .lte('tanggal', endDate.toISOString())
         .order('tanggal', { ascending: false });
 
     if (error) { 
