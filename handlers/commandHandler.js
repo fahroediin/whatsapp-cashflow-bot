@@ -3,7 +3,7 @@ const supabase = require('../supabaseClient');
 const { formatCurrency, createTableRow } = require('../utils/currency');
 const { logActivity, findOrCreateUser } = require('../utils/db');
 
-// Bantuan
+// Bantuan (Tidak ada perubahan)
 async function handleBantuan(msg, userName) {
     const { data: categories, error } = await supabase.from('kategori').select('nama_kategori, tipe');
     if (error) { 
@@ -66,26 +66,26 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
     switch (periode) {
         case 'harian':
-            // --- START PERBAIKAN FINAL DAN ANDAL ---
-            
-            // 1. Tentukan rentang waktu yang benar untuk "hari ini"
-            const today = new Date();
-            today.setHours(0, 0, 0, 0); // Set ke awal hari ini
+            // --- START PERBAIKAN TOTAL DENGAN FUNGSI DATABASE ---
 
-            const tomorrow = new Date(today);
-            tomorrow.setDate(today.getDate() + 1); // Set ke awal hari besok
+            // 1. Panggil fungsi di database untuk mendapatkan rentang waktu yang 100% akurat
+            const { data: ranges, error: rangeError } = await supabase.rpc('get_current_date_ranges').single();
 
-            // 2. Tentukan rentang waktu untuk "bulan ini"
-            const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+            if (rangeError || !ranges) {
+                await logActivity(user.id, msg.from, 'Error RPC Date', rangeError ? rangeError.message : 'No ranges returned');
+                msg.reply("Maaf, gagal mendapatkan rentang waktu dari database. Coba lagi.");
+                return;
+            }
 
-            // 3. Ambil transaksi BULAN INI untuk menghitung saldo
-            // Query ini mengambil data dari awal bulan hingga akhir hari ini.
+            const { today_start, tomorrow_start, month_start } = ranges;
+
+            // 2. Ambil transaksi BULAN INI untuk menghitung saldo
             const { data: monthlyTransactions, error: balanceError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', startOfMonth.toISOString())
-                .lt('tanggal', tomorrow.toISOString()); // lt = "less than" (kurang dari awal hari besok)
+                .gte('tanggal', month_start) // Gunakan nilai dari fungsi
+                .lt('tanggal', tomorrow_start);  // Gunakan nilai dari fungsi
 
             if (balanceError) {
                 await logActivity(user.id, msg.from, 'Error Cek Saldo Bulanan', balanceError.message);
@@ -100,13 +100,13 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             });
             const saldoBulanIni = totalPemasukanBulanIni - totalPengeluaranBulanIni;
             
-            // 4. Ambil transaksi HARI INI SAJA untuk ditampilkan rinciannya
+            // 3. Ambil transaksi HARI INI SAJA untuk ditampilkan rinciannya
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', today.toISOString())   // gte = "greater than or equal to" (dari awal hari ini)
-                .lt('tanggal', tomorrow.toISOString()) // lt = "less than" (hingga sebelum awal hari besok)
+                .gte('tanggal', today_start)    // Gunakan nilai dari fungsi
+                .lt('tanggal', tomorrow_start)  // Gunakan nilai dari fungsi
                 .order('tanggal', { ascending: false });
 
             // --- END PERBAIKAN ---
@@ -117,7 +117,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 return;
             }
 
-            // Jika tidak ada transaksi hari ini, tetap tampilkan saldo bulanan
             if (dailyTransactions.length === 0) {
                 msg.reply(`Tidak ada transaksi hari ini. 😊\n\nSaldo Anda bulan ini adalah *${formatCurrency(saldoBulanIni)}*`);
                 return;
@@ -158,6 +157,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             msg.reply(reportTextHarian);
             return;
 
+        // KASUS LAINNYA TIDAK BERUBAH
         case 'mingguan':
             startDate = new Date(now);
             const dayOfWeek = startDate.getDay();
@@ -215,7 +215,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             return;
     }
 
-    // Bagian ini hanya untuk 'mingguan', 'bulanan', 'tahunan'. 'harian' sudah selesai di atas.
     const { data: transactions, error } = await supabase
         .from('transaksi')
         .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
@@ -259,11 +258,11 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                      `✨ *Selisih (Periode Ini):*\n   *${formatCurrency(sisaUangPeriode)}*\n` +
                      `--------------------\n`;
     if (incomeDetails.length > 0) { reportText += `\n*RINCIAN PEMASUKAN* 📥\n` + "```\n" + incomeDetails.join('\n') + "\n```"; }
-    if (expenseDetails.length > 0) { reportText += `\n*RINCIAN PENGELUARAN* 📤\n` + "```\n" + expenseDetails.join('\n') + "\n```"; }
+    if (expenseDetails.length > 0) { reportText += `\n*RINCIAN PENGELUaran* 📤\n` + "```\n" + expenseDetails.join('\n') + "\n```"; }
     msg.reply(reportText);
 }
 
-// Edit
+// Edit (Tidak ada perubahan)
 async function handleEdit(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Edit Transaksi', msg.body);
     
@@ -305,7 +304,7 @@ async function handleEdit(msg, user, userState) {
     msg.reply(infoText);
 }
 
-// Hapus
+// Hapus (Tidak ada perubahan)
 async function handleHapus(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Hapus Transaksi', msg.body);
     
@@ -352,7 +351,7 @@ async function handleHapus(msg, user, userState) {
     msg.reply(listText);
 }
 
-// Reset
+// Reset (Tidak ada perubahan)
 async function handleReset(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Reset Data', msg.body);
     
