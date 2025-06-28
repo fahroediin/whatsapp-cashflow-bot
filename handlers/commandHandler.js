@@ -66,36 +66,46 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
     switch (periode) {
         case 'harian':
+            // Batas waktu untuk transaksi hari ini
             startDate = new Date(now);
             startDate.setHours(0, 0, 0, 0);
             endDate = new Date(now);
             endDate.setHours(23, 59, 59, 999);
 
-            const { data: allTransactions, error: allError } = await supabase
+            // --- START PERBAIKAN ---
+            // Tentukan awal bulan untuk perhitungan saldo kumulatif bulanan
+            const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+            startOfMonth.setHours(0, 0, 0, 0);
+
+            // Ambil transaksi bulan ini untuk menghitung saldo
+            const { data: monthlyTransactions, error: balanceError } = await supabase
                 .from('transaksi')
                 .select(`nominal, kategori (tipe)`)
                 .eq('id_user', user.id)
-                .lte('tanggal', endDate.toISOString());
+                .gte('tanggal', startOfMonth.toISOString()) // Batas awal adalah awal bulan
+                .lte('tanggal', endDate.toISOString());     // Batas akhir adalah hari ini
 
-            if (allError) {
-                await logActivity(user.id, msg.from, 'Error Cek Laporan Kumulatif', allError.message);
-                msg.reply("Gagal menghitung saldo kumulatif.");
+            if (balanceError) {
+                await logActivity(user.id, msg.from, 'Error Cek Saldo Bulanan', balanceError.message);
+                msg.reply("Gagal menghitung saldo bulanan.");
                 return;
             }
 
-            let totalPemasukanKumulatif = 0, totalPengeluaranKumulatif = 0;
-            allTransactions.forEach(t => {
-                if (t.kategori.tipe === 'INCOME') totalPemasukanKumulatif += t.nominal;
-                else totalPengeluaranKumulatif += t.nominal;
+            let totalPemasukanBulanIni = 0, totalPengeluaranBulanIni = 0;
+            monthlyTransactions.forEach(t => {
+                if (t.kategori.tipe === 'INCOME') totalPemasukanBulanIni += t.nominal;
+                else totalPengeluaranBulanIni += t.nominal;
             });
-            const saldoKumulatif = totalPemasukanKumulatif - totalPengeluaranKumulatif;
+            const saldoBulanIni = totalPemasukanBulanIni - totalPengeluaranBulanIni;
+            // --- END PERBAIKAN ---
             
+            // Ambil transaksi khusus untuk hari ini untuk ditampilkan rinciannya
             const { data: dailyTransactions, error: dailyError } = await supabase
                 .from('transaksi')
                 .select(`nominal, catatan, kategori (nama_kategori, tipe)`)
                 .eq('id_user', user.id)
-                .gte('tanggal', startDate.toISOString())
-                .lte('tanggal', endDate.toISOString())
+                .gte('tanggal', startDate.toISOString()) // Batas waktu harian
+                .lte('tanggal', endDate.toISOString())   // Batas waktu harian
                 .order('tanggal', { ascending: false });
 
             if (dailyError) {
@@ -105,7 +115,8 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             }
 
             if (dailyTransactions.length === 0) {
-                msg.reply(`Tidak ada transaksi hari ini. 😊\n\nSaldo kumulatif Anda saat ini adalah *${formatCurrency(saldoKumulatif)}*`);
+                // Tampilkan saldo bulan ini bahkan jika tidak ada transaksi hari ini
+                msg.reply(`Tidak ada transaksi hari ini. 😊\n\nSaldo Anda bulan ini adalah *${formatCurrency(saldoBulanIni)}*`);
                 return;
             }
 
@@ -124,11 +135,12 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                 }
             });
 
-            let reportTextHarian = `📊 *Laporan Harian & Saldo Kumulatif*\n\n` +
-                             `📥 *Total Pemasukan (Kumulatif):*\n   ${formatCurrency(totalPemasukanKumulatif)}\n\n` +
-                             `📤 *Total Pengeluaran (Kumulatif):*\n   ${formatCurrency(totalPengeluaranKumulatif)}\n\n` +
+            // --- PERBAIKAN TEKS LAPORAN ---
+            let reportTextHarian = `📊 *Laporan Harian & Saldo Bulan Ini*\n\n` +
+                             `📥 *Total Pemasukan (Bulan Ini):*\n   ${formatCurrency(totalPemasukanBulanIni)}\n\n` +
+                             `📤 *Total Pengeluaran (Bulan Ini):*\n   ${formatCurrency(totalPengeluaranBulanIni)}\n\n` +
                              `--------------------\n` +
-                             `✨ *Saldo Akhir (Kumulatif):*\n   *${formatCurrency(saldoKumulatif)}*\n` +
+                             `✨ *Saldo Akhir (Bulan Ini):*\n   *${formatCurrency(saldoBulanIni)}*\n` +
                              `--------------------\n\n`;
 
             if (totalPemasukanHarian > 0) {
