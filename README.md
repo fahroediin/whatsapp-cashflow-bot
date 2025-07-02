@@ -194,7 +194,7 @@ Interaksi dengan bot dilakukan melalui perintah-perintah berikut:
 ├── handlers/
 │   ├── commandHandler.js    # Logika untuk setiap perintah (cek, edit, hapus, reset)
 │   ├── interactiveHandler.js # Logika untuk step-by-step interaktif
-│   └── transactionHandler.js  # Logika untuk mencatat transaksi baru
+│   └── transactionHandler.js # Logika untuk mencatat transaksi baru
 ├── utils/
 │   ├── currency.js          # Fungsi formatCurrency dan parseNominal
 │   └── db.js                # Fungsi terkait Supabase (log, getUser, dll)
