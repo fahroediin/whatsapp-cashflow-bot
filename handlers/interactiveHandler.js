@@ -10,21 +10,34 @@ async function finalizeEdit(msg, userNumber, data, userState) {
 
     const user = await findOrCreateUser(userNumber, '');
 
-    if (updateData.nominal !== undefined && data.tipe === 'EXPENSE') {
-        const balance = await getUserBalance(user.id);
-        const oldNominal = data.old_nominal || 0;
-        const effectiveBalance = balance + oldNominal; 
-        if (effectiveBalance < updateData.nominal) {
-            const logDetail = `Saldo tidak cukup untuk edit. Saldo Efektif: ${effectiveBalance}, Nominal Baru: ${updateData.nominal}`;
-            await logActivity(user.id, userNumber, 'Gagal Edit', logDetail);
-            msg.reply(`⚠️ *Edit Gagal!*\nSaldo tidak mencukupi untuk nominal baru.\n\n`+
-                      `Saldo Efektif: *${formatCurrency(effectiveBalance)}*\n` +
-                      `Nominal Baru: *${formatCurrency(updateData.nominal)}*`);
-            delete userState[userNumber];
-            return;
-        }
+    // Ambil saldo saat ini
+    const { data: userData, error: userError } = await supabase.from('users').select('saldo').eq('id', user.id).single();
+    if (userError) {
+        msg.reply("Gagal mengambil data saldo untuk edit.");
+        delete userState[userNumber];
+        return;
+    }
+    const currentBalance = userData.saldo;
+    const oldNominal = data.old_nominal || 0;
+    
+    // Hitung selisih nominal
+    const nominalDifference = (updateData.nominal !== undefined) ? updateData.nominal - oldNominal : 0;
+
+    // Hitung saldo yang "dikembalikan" sebelum dihitung ulang
+    const revertedBalance = data.tipe === 'INCOME' ? currentBalance - oldNominal : currentBalance + oldNominal;
+    
+    // Validasi saldo jika ini pengeluaran
+    if (data.tipe === 'EXPENSE' && updateData.nominal !== undefined && revertedBalance < updateData.nominal) {
+        const logDetail = `Saldo tidak cukup untuk edit. Saldo Efektif: ${revertededBalance}, Nominal Baru: ${updateData.nominal}`;
+        await logActivity(user.id, userNumber, 'Gagal Edit', logDetail);
+        msg.reply(`⚠️ *Edit Gagal!*\nSaldo tidak mencukupi untuk nominal baru.\n\n`+
+                  `Saldo Efektif: *${formatCurrency(revertedBalance)}*\n` +
+                  `Nominal Baru: *${formatCurrency(updateData.nominal)}*`);
+        delete userState[userNumber];
+        return;
     }
 
+    // Update transaksi
     const { error } = await supabase
         .from('transaksi')
         .update(updateData)
@@ -33,14 +46,28 @@ async function finalizeEdit(msg, userNumber, data, userState) {
     if (error) {
         await logActivity(user.id, userNumber, 'Error Edit Transaksi', error.message);
         msg.reply("Maaf, gagal mengubah transaksi. Silakan coba lagi.");
+        delete userState[userNumber];
+        return;
+    }
+    
+    // Jika nominal diubah, update saldo user
+    if (nominalDifference !== 0) {
+        const balanceAdjustment = data.tipe === 'INCOME' ? nominalDifference : -nominalDifference;
+        const newBalance = currentBalance + balanceAdjustment;
+        
+        const { error: updateBalanceError } = await supabase.from('users').update({ saldo: newBalance }).eq('id', user.id);
+        if (updateBalanceError) {
+             await logActivity(user.id, userNumber, 'KRITIS: Gagal Update Saldo (Edit)', `Edit Tx berhasil, saldo gagal. Error: ${updateBalanceError.message}`);
+             msg.reply("✅ Transaksi berhasil diubah, namun ada masalah saat memperbarui saldo Anda.");
+        } else {
+             msg.reply(`✅ Transaksi berhasil diubah!\n\n💰 *Saldo Baru:* ${formatCurrency(newBalance)}`);
+        }
     } else {
-        await logActivity(user.id, userNumber, 'Sukses Edit Transaksi', `ID: ${data.tx_id}, Data: ${JSON.stringify(updateData)}`);
-        msg.reply(`✅ Transaksi berhasil diubah!`);
+        msg.reply(`✅ Transaksi berhasil diubah! (Catatan saja)`);
     }
 
     delete userState[userNumber];
 }
-
 async function handleInteractiveSteps(msg, user, userState) {
     const state = userState[msg.from];
     const messageBody = msg.body.trim();
