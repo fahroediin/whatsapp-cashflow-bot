@@ -34,7 +34,7 @@ function parseNominal(nominalStr) {
 }
 
 /**
- * Membuat entri rincian bergaya pohon untuk laporan keuangan, sesuai format yang diminta.
+ * Membuat entri rincian bergaya pohon untuk laporan keuangan.
  * @param {string} kategori Nama kategori.
  * @param {number} nominal Jumlah nominal.
  * @param {string|null} catatan Catatan transaksi.
@@ -48,28 +48,25 @@ function createTableRow(kategori, nominal, catatan, tanggalString, format = 'tim
     if (tanggalString) {
         const dateObj = new Date(tanggalString);
         if (format === 'time') {
-            // Format HANYA WAKTU: [HH:mm]
             const time = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
             datePrefix = `[${time}] `;
         } else if (format === 'date') {
-            // Format HANYA TANGGAL: [DD/MM]
-            const date = dateObj.toLocaleDateString('id-ID', { day: '2-digit', month: '2-digit', timeZone: 'Asia/Jakarta' });
-            datePrefix = `[${date}] `;
+            // === PERUBAHAN DI SINI ===
+            // Format tanggal secara manual untuk memastikan hasilnya selalu DD/MM
+            const day = String(dateObj.getDate()).padStart(2, '0');
+            const month = String(dateObj.getMonth() + 1).padStart(2, '0'); // getMonth() adalah 0-indexed, jadi +1
+            datePrefix = `[${day}/${month}] `;
         }
     }
     
-    // Baris utama dengan tanggal dan kategori
     const mainLine = `${datePrefix}${kategori}`;
     const formattedNominal = formatCurrency(nominal);
 
     if (catatan && catatan.trim() !== '') {
-        // Jika ada catatan, buat struktur dua cabang seperti di gambar
-        // Karakter '├' dan '└' akan membentuk struktur pohon di font monospace (seperti di WA)
         const nominalLine = `  ├─ ${formattedNominal}`;
         const catatanLine = `  └─ ${catatan}`;
         return `${mainLine}\n${nominalLine}\n${catatanLine}`;
     } else {
-        // Jika tidak ada catatan, buat struktur satu cabang untuk nominal
         const nominalLine = `  └─ ${formattedNominal}`;
         return `${mainLine}\n${nominalLine}`;
     }
