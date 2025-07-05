@@ -1,9 +1,13 @@
-// handlers/commandHandler.js
+// handlers/commandHandler.js (Versi Final dengan date-fns-tz)
 const supabase = require('../supabaseClient');
 const { formatCurrency, createTableRow } = require('../utils/currency');
 const { logActivity, findOrCreateUser } = require('../utils/db');
+// --- IMPORT LIBRARY BARU ---
+const { zonedTimeToUtc, utcToZonedTime, format } = require('date-fns-tz');
+const { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear } = require('date-fns');
 
 // Bantuan (Tidak ada perubahan)
+// ... (fungsi handleBantuan tetap sama)
 async function handleBantuan(msg, userName) {
     const { data: categories, error } = await supabase.from('kategori').select('nama_kategori, tipe');
     if (error) { 
@@ -43,7 +47,8 @@ async function handleBantuan(msg, userName) {
     msg.reply(helpText);
 }
 
-// Cek Keuangan
+
+// Cek Keuangan (Sepenuhnya diperbarui dengan date-fns-tz)
 async function handleCekKeuangan(msg, user, parts, originalMessage) {
     const periode = parts[1];
     if (!periode) {
@@ -58,66 +63,60 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
         sep: 8, september: 8, okt: 9, oktober: 9, nov: 10, november: 10, des: 11, desember: 11
     };
     const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    
+    // --- LOGIKA TIMEZONE BARU DAN ANDAL ---
+    const timeZone = 'Asia/Jakarta';
+    const nowInJakarta = utcToZonedTime(new Date(), timeZone);
 
-    // --- LOGIKA TIMEZONE BARU ---
-    // Buat objek tanggal berdasarkan timezone Jakarta
-    const jakartaTime = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+    let startDate, endDate, reportTitle, dateFormatType = 'date';
+    let targetDate = nowInJakarta; // Default target adalah hari ini
 
-    let startDate, endDate, reportTitle, dateFormatType;
+    if (periode === 'bulanan' || periode === 'tahunan') {
+        let targetYear, targetMonth;
+        if (periode === 'bulanan') {
+            const monthArg = parts[2];
+            const yearArg = parts[3];
+            targetYear = yearArg ? parseInt(yearArg, 10) : nowInJakarta.getFullYear();
+            targetMonth = monthArg ? (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12 ? monthArg - 1 : monthMap[monthArg.toLowerCase()]) : nowInJakarta.getMonth();
+            if (targetMonth === undefined || isNaN(targetYear)) { msg.reply(`❌ Format tanggal tidak valid.`); return; }
+        } else { // tahunan
+            const yearArg = parts[2];
+            targetYear = yearArg ? parseInt(yearArg, 10) : nowInJakarta.getFullYear();
+            targetMonth = 0; // Mulai dari Januari
+            if (isNaN(targetYear)) { msg.reply(`❌ Format tahun tidak valid.`); return; }
+        }
+        targetDate = new Date(targetYear, targetMonth, 15); // Ambil tanggal tengah bulan untuk menghindari isu DST
+    }
 
-    if (periode === 'harian') {
-        startDate = new Date(jakartaTime);
-        startDate.setHours(0, 0, 0, 0);
-        
-        endDate = new Date(jakartaTime);
-        endDate.setHours(23, 59, 59, 999);
-        
-        const tgl = startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        reportTitle = `Laporan Harian (${tgl})`;
-        dateFormatType = 'date';
-    } else if (periode === 'mingguan') {
-        startDate = new Date(jakartaTime);
-        const day = startDate.getDay();
-        const diff = startDate.getDate() - day + (day === 0 ? -6 : 1);
-        startDate.setDate(diff);
-        startDate.setHours(0, 0, 0, 0);
-        
-        endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-        endDate.setHours(23, 59, 59, 999);
-        
-        reportTitle = "Laporan Mingguan";
-        dateFormatType = 'date';
-    } else if (periode === 'bulanan') {
-        const monthArg = parts[2];
-        const yearArg = parts[3] ? parseInt(parts[3], 10) : jakartaTime.getFullYear();
-        let targetYear = isNaN(yearArg) ? jakartaTime.getFullYear() : yearArg;
-        let targetMonth = monthArg ? (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12 ? monthArg - 1 : monthMap[monthArg.toLowerCase()]) : jakartaTime.getMonth();
-
-        if (targetMonth === undefined) { msg.reply(`❌ Bulan "${monthArg}" tidak valid.`); return; }
-        
-        startDate = new Date(targetYear, targetMonth, 1, 0, 0, 0, 0);
-        endDate = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
-        
-        reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
-        dateFormatType = 'date';
-    } else if (periode === 'tahunan') {
-        const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : jakartaTime.getFullYear();
-        if (isNaN(targetAnnualYear)) { msg.reply(`❌ Format tahun "${parts[2]}" tidak valid.`); return; }
-        
-        startDate = new Date(targetAnnualYear, 0, 1, 0, 0, 0, 0);
-        endDate = new Date(targetAnnualYear, 11, 31, 23, 59, 59, 999);
-        
-        reportTitle = `Laporan Tahunan (${targetAnnualYear})`;
-        dateFormatType = 'date';
-    } else {
-        await logActivity(user.id, msg.from, 'Gagal Cek Laporan', `Periode tidak valid: ${periode}.`);
-        msg.reply(`❌ Periode "${periode}" tidak valid. Pilih antara: *harian, mingguan, bulanan, tahunan*.`);
-        return;
+    switch (periode) {
+        case 'harian':
+            startDate = startOfDay(nowInJakarta);
+            endDate = endOfDay(nowInJakarta);
+            reportTitle = `Laporan Harian (${format(startDate, 'd MMMM yyyy', { timeZone })})`;
+            break;
+        case 'mingguan':
+            // 'startOfWeek' menganggap Minggu sebagai awal. Sesuaikan jika perlu (misal, Senin).
+            startDate = startOfWeek(nowInJakarta, { weekStartsOn: 1 }); // 1 untuk Senin
+            endDate = endOfWeek(nowInJakarta, { weekStartsOn: 1 });
+            reportTitle = "Laporan Mingguan";
+            break;
+        case 'bulanan':
+            startDate = startOfMonth(targetDate);
+            endDate = endOfMonth(targetDate);
+            reportTitle = `Laporan Bulanan (${format(startDate, 'MMMM yyyy', { timeZone })})`;
+            break;
+        case 'tahunan':
+            startDate = startOfYear(targetDate);
+            endDate = endOfYear(targetDate);
+            reportTitle = `Laporan Tahunan (${format(startDate, 'yyyy', { timeZone })})`;
+            break;
+        default:
+            await logActivity(user.id, msg.from, 'Gagal Cek Laporan', `Periode tidak valid: ${periode}.`);
+            msg.reply(`❌ Periode "${periode}" tidak valid. Pilih antara: *harian, mingguan, bulanan, tahunan*.`);
+            return;
     }
     
     // --- LAPORAN DENGAN SALDO ---
-    
     const { data: userData, error: userError } = await supabase.from('users').select('saldo').eq('id', user.id).single();
     if (userError) {
         msg.reply("Gagal mengambil data saldo Anda.");
@@ -172,7 +171,8 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
     msg.reply(reportText);
 }
 
-// Edit (Tidak ada perubahan)
+// ... (sisa fungsi handleEdit, handleHapus, handleReset tidak perlu diubah)
+// ...
 async function handleEdit(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Edit Transaksi', msg.body);
     
@@ -214,13 +214,14 @@ async function handleEdit(msg, user, userState) {
     msg.reply(infoText);
 }
 
-// Hapus (Tidak ada perubahan)
 async function handleHapus(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Hapus Transaksi', msg.body);
     
-    const now = new Date();
-    const startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-    const endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    // Menggunakan waktu Jakarta untuk menentukan bulan ini
+    const timeZone = 'Asia/Jakarta';
+    const nowInJakarta = utcToZonedTime(new Date(), timeZone);
+    const startDate = startOfMonth(nowInJakarta);
+    const endDate = endOfMonth(nowInJakarta);
 
     const { data: transactions, error } = await supabase
         .from('transaksi')
@@ -249,7 +250,7 @@ async function handleHapus(msg, user, userState) {
 
     let listText = "Pilih transaksi yang ingin Anda hapus dengan mengirimkan nomornya:\n\n";
     transactions.forEach((tx, index) => {
-        const tgl = new Date(tx.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
+        const tgl = new Date(tx.tanggal).toLocaleDateString('id-ID', { day: '2-digit', month: 'short', timeZone });
         const tipeEmoji = tx.kategori.tipe === 'INCOME' ? '📥' : '📤';
         listText += `*${index + 1}.* ${tipeEmoji} [${tgl}] ${tx.kategori.nama_kategori} - ${formatCurrency(tx.nominal)}\n`;
         if (tx.catatan) {
@@ -261,7 +262,6 @@ async function handleHapus(msg, user, userState) {
     msg.reply(listText);
 }
 
-// Reset (Tidak ada perubahan)
 async function handleReset(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Reset Data', msg.body);
     
