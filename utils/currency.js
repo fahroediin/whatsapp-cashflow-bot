@@ -1,4 +1,6 @@
-// utils/currency.js
+// utils/currency.js (Versi Final dengan Timezone yang Benar)
+
+const { formatInTimeZone } = require('date-fns-tz');
 
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 
@@ -34,7 +36,7 @@ function parseNominal(nominalStr) {
 }
 
 /**
- * Membuat entri rincian bergaya pohon untuk laporan keuangan.
+ * Membuat entri rincian bergaya pohon untuk laporan keuangan, dengan format tanggal yang andal.
  * @param {string} kategori Nama kategori.
  * @param {number} nominal Jumlah nominal.
  * @param {string|null} catatan Catatan transaksi.
@@ -42,21 +44,16 @@ function parseNominal(nominalStr) {
  * @param {'time'|'date'} format Tipe format waktu yang ditampilkan.
  * @returns {string} String multi-baris yang sudah diformat.
  */
-function createTableRow(kategori, nominal, catatan, tanggalString, format = 'time') {
+function createTableRow(kategori, nominal, catatan, tanggalString, format = 'date') {
     let datePrefix = '';
+    const timeZone = 'Asia/Jakarta';
 
     if (tanggalString) {
-        const dateObj = new Date(tanggalString);
-        if (format === 'time') {
-            const time = dateObj.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' });
-            datePrefix = `[${time}] `;
-        } else if (format === 'date') {
-            // === PERUBAHAN DI SINI ===
-            // Format tanggal secara manual untuk memastikan hasilnya selalu DD/MM
-            const day = String(dateObj.getDate()).padStart(2, '0');
-            const month = String(dateObj.getMonth() + 1).padStart(2, '0'); // getMonth() adalah 0-indexed, jadi +1
-            datePrefix = `[${day}/${month}] `;
-        }
+        // --- INI PERUBAHAN UTAMA ---
+        // Gunakan formatInTimeZone untuk memastikan tanggal selalu benar
+        // 'dd/MM' adalah format yang kita inginkan: 05/07
+        const formattedDate = formatInTimeZone(tanggalString, timeZone, 'dd/MM');
+        datePrefix = `[${formattedDate}] `;
     }
     
     const mainLine = `${datePrefix}${kategori}`;
