@@ -43,7 +43,6 @@ async function handleBantuan(msg, userName) {
     msg.reply(helpText);
 }
 
-
 // Cek Keuangan (Versi Revisi tanpa library eksternal)
 async function handleCekKeuangan(msg, user, parts, originalMessage) {
     const periode = parts[1];

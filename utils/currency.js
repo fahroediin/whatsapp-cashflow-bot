@@ -1,7 +1,5 @@
 // utils/currency.js (Versi Final dengan Timezone yang Benar)
 
-const { formatInTimeZone } = require('date-fns-tz');
-
 const formatCurrency = (val) => new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(val);
 
 function parseNominal(nominalStr) {
@@ -46,13 +44,14 @@ function parseNominal(nominalStr) {
  */
 function createTableRow(kategori, nominal, catatan, tanggalString, format = 'date') {
     let datePrefix = '';
-    const timeZone = 'Asia/Jakarta';
 
     if (tanggalString) {
-        // --- INI PERUBAHAN UTAMA ---
-        // Gunakan formatInTimeZone untuk memastikan tanggal selalu benar
+        const dateObj = new Date(tanggalString);
         // 'dd/MM' adalah format yang kita inginkan: 05/07
-        const formattedDate = formatInTimeZone(tanggalString, timeZone, 'dd/MM');
+        // Menggunakan toLocaleDateString dengan opsi spesifik lebih andal
+        const day = String(dateObj.getDate()).padStart(2, '0');
+        const month = String(dateObj.getMonth() + 1).padStart(2, '0'); // getMonth() adalah 0-indexed
+        const formattedDate = `${day}/${month}`;
         datePrefix = `[${formattedDate}] `;
     }
     
