@@ -1,7 +1,24 @@
-// handlers/commandHandler.js (Versi Final TANPA date-fns-tz)
+// handlers/commandHandler.js (Versi Final dengan Timezone yang Benar & Tanpa Library)
 const supabase = require('../supabaseClient');
 const { formatCurrency, createTableRow } = require('../utils/currency');
 const { logActivity, findOrCreateUser } = require('../utils/db');
+
+// --- Fungsi Helper untuk mendapatkan bagian tanggal di zona waktu tertentu ---
+function getLocalDateParts(date, timeZone) {
+    // Gunakan Intl.DateTimeFormat untuk mengekstrak bagian tanggal dengan andal
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+    }).formatToParts(date);
+
+    const year = parseInt(parts.find(p => p.type === 'year').value, 10);
+    const month = parseInt(parts.find(p => p.type === 'month').value, 10) - 1; // getMonth() adalah 0-indexed
+    const day = parseInt(parts.find(p => p.type === 'day').value, 10);
+
+    return { year, month, day };
+}
 
 // Bantuan (Tidak ada perubahan)
 async function handleBantuan(msg, userName) {
@@ -43,7 +60,8 @@ async function handleBantuan(msg, userName) {
     msg.reply(helpText);
 }
 
-// Cek Keuangan (Versi Revisi tanpa library eksternal)
+
+// Cek Keuangan (Versi Revisi Final)
 async function handleCekKeuangan(msg, user, parts, originalMessage) {
     const periode = parts[1];
     if (!periode) {
@@ -59,18 +77,23 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
     };
     const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
     
-    // Gunakan new Date() biasa, karena server dan DB sama-sama di WIB
-    const now = new Date(); 
+    const now = new Date();
+    const timeZone = 'Asia/Jakarta';
 
     let startDate, endDate, reportTitle, dateFormatType = 'date';
     
+    // Dapatkan bagian tanggal yang benar berdasarkan zona waktu Jakarta
+    const { year: currentYear, month: currentMonth, day: currentDay } = getLocalDateParts(now, timeZone);
+    const dateInJakarta = new Date(currentYear, currentMonth, currentDay);
+    
     if (periode === 'harian') {
-        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
-        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-        reportTitle = `Laporan Harian (${startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })})`;
+        startDate = new Date(dateInJakarta.getFullYear(), dateInJakarta.getMonth(), dateInJakarta.getDate(), 0, 0, 0, 0);
+        endDate = new Date(dateInJakarta.getFullYear(), dateInJakarta.getMonth(), dateInJakarta.getDate(), 23, 59, 59, 999);
+        reportTitle = `Laporan Harian (${startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone })})`;
     } else if (periode === 'mingguan') {
-        const firstDayOfWeek = now.getDate() - now.getDay() + (now.getDay() === 0 ? -6 : 1);
-        startDate = new Date(now.setDate(firstDayOfWeek));
+        const dayOfWeek = dateInJakarta.getDay();
+        const firstDayOfWeek = dateInJakarta.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+        startDate = new Date(dateInJakarta.setDate(firstDayOfWeek));
         startDate.setHours(0,0,0,0);
         endDate = new Date(startDate);
         endDate.setDate(startDate.getDate() + 6);
@@ -78,16 +101,15 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
         reportTitle = "Laporan Mingguan";
     } else if (periode === 'bulanan') {
         const monthArg = parts[2];
-        const yearArg = parts[3] ? parseInt(parts[3], 10) : now.getFullYear();
-        let targetYear = isNaN(yearArg) ? now.getFullYear() : yearArg;
-        let targetMonth = monthArg ? (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12 ? monthArg - 1 : monthMap[monthArg.toLowerCase()]) : now.getMonth();
+        const yearArg = parts[3] ? parseInt(parts[3], 10) : currentYear;
+        let targetYear = isNaN(yearArg) ? currentYear : yearArg;
+        let targetMonth = monthArg ? (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12 ? monthArg - 1 : monthMap[monthArg.toLowerCase()]) : currentMonth;
         if (targetMonth === undefined) { msg.reply(`❌ Bulan "${monthArg}" tidak valid.`); return; }
         startDate = new Date(targetYear, targetMonth, 1);
-        endDate = new Date(targetYear, targetMonth + 1, 0);
-        endDate.setHours(23, 59, 59, 999);
+        endDate = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
         reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
     } else if (periode === 'tahunan') {
-        const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : now.getFullYear();
+        const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : currentYear;
         if (isNaN(targetAnnualYear)) { msg.reply(`❌ Format tahun "${parts[2]}" tidak valid.`); return; }
         startDate = new Date(targetAnnualYear, 0, 1);
         endDate = new Date(targetAnnualYear, 11, 31, 23, 59, 59, 999);
@@ -98,6 +120,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
         return;
     }
     
+    // --- LAPORAN DENGAN SALDO ---
     const { data: userData, error: userError } = await supabase.from('users').select('saldo').eq('id', user.id).single();
     if (userError) {
         msg.reply("Gagal mengambil data saldo Anda.");
@@ -154,7 +177,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
 
 // ... sisa file tetap sama ...
-// Edit (Tidak ada perubahan)
 async function handleEdit(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Edit Transaksi', msg.body);
     
@@ -196,7 +218,6 @@ async function handleEdit(msg, user, userState) {
     msg.reply(infoText);
 }
 
-// Hapus (Tidak ada perubahan)
 async function handleHapus(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Hapus Transaksi', msg.body);
     
@@ -243,7 +264,6 @@ async function handleHapus(msg, user, userState) {
     msg.reply(listText);
 }
 
-// Reset (Tidak ada perubahan)
 async function handleReset(msg, user, userState) {
     await logActivity(user.id, msg.from, 'Mulai Reset Data', msg.body);
     
