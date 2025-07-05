@@ -28,7 +28,7 @@ async function finalizeEdit(msg, userNumber, data, userState) {
     
     // Validasi saldo jika ini pengeluaran
     if (data.tipe === 'EXPENSE' && updateData.nominal !== undefined && revertedBalance < updateData.nominal) {
-        const logDetail = `Saldo tidak cukup untuk edit. Saldo Efektif: ${revertededBalance}, Nominal Baru: ${updateData.nominal}`;
+        const logDetail = `Saldo tidak cukup untuk edit. Saldo Efektif: ${revertedBalance}, Nominal Baru: ${updateData.nominal}`;
         await logActivity(user.id, userNumber, 'Gagal Edit', logDetail);
         msg.reply(`⚠️ *Edit Gagal!*\nSaldo tidak mencukupi untuk nominal baru.\n\n`+
                   `Saldo Efektif: *${formatCurrency(revertedBalance)}*\n` +
@@ -68,6 +68,7 @@ async function finalizeEdit(msg, userNumber, data, userState) {
 
     delete userState[userNumber];
 }
+
 async function handleInteractiveSteps(msg, user, userState) {
     const state = userState[msg.from];
     const messageBody = msg.body.trim();
@@ -82,6 +83,7 @@ async function handleInteractiveSteps(msg, user, userState) {
 
     switch (state.step) {
         case 'awaiting_reset_confirmation':
+            // ... (Tidak ada perubahan)
             if (messageBody.toLowerCase() !== 'ya') {
                 await logActivity(user.id, userNumber, 'Reset Dibatalkan', `Input tidak sesuai: ${messageBody}`);
                 delete userState[userNumber];
@@ -100,6 +102,7 @@ async function handleInteractiveSteps(msg, user, userState) {
             break;
 
         case 'awaiting_final_reset_confirmation':
+            // ... (Tidak ada perubahan)
             if (messageBody.toLowerCase() !== 'reset data saya sekarang') {
                 await logActivity(user.id, userNumber, 'Reset Dibatalkan (Final)', `Input tidak sesuai: ${messageBody}`);
                 delete userState[userNumber];
@@ -107,23 +110,32 @@ async function handleInteractiveSteps(msg, user, userState) {
                 return;
             }
 
+            // Saat reset, hapus transaksi DAN set saldo ke 0
             await logActivity(user.id, userNumber, 'Eksekusi Reset', 'Menghapus semua transaksi pengguna.');
             const { error: deleteError } = await supabase
                 .from('transaksi')
                 .delete()
                 .eq('id_user', user.id);
+            
+            // Set saldo user kembali ke 0
+            const { error: resetSaldoError } = await supabase
+                .from('users')
+                .update({ saldo: 0 })
+                .eq('id', user.id);
 
-            if (deleteError) {
-                await logActivity(user.id, userNumber, 'Error Reset Data', deleteError.message);
-                msg.reply("Maaf, terjadi kesalahan teknis saat mencoba mereset data Anda. Silakan coba lagi nanti.");
+            if (deleteError || resetSaldoError) {
+                const errorMessage = (deleteError?.message || '') + ' ' + (resetSaldoError?.message || '');
+                await logActivity(user.id, userNumber, 'Error Reset Data', errorMessage);
+                msg.reply("Maaf, terjadi kesalahan teknis saat mencoba mereset data Anda.");
             } else {
-                await logActivity(user.id, userNumber, 'Sukses Reset Data', 'Semua transaksi telah dihapus.');
-                msg.reply("✅ *Reset Berhasil!* Semua data transaksi Anda telah dihapus secara permanen. Anda bisa memulai pencatatan dari awal.");
+                await logActivity(user.id, userNumber, 'Sukses Reset Data', 'Semua transaksi dan saldo telah direset.');
+                msg.reply("✅ *Reset Berhasil!* Semua data transaksi Anda telah dihapus dan saldo direset ke 0.");
             }
             
             delete userState[userNumber];
             break;
 
+        // === BAGIAN YANG DIUBAH ADA DI SINI ===
         case 'awaiting_delete_choice':
             const choiceIndex = parseInt(messageBody, 10) - 1;
             if (isNaN(choiceIndex) || choiceIndex < 0 || choiceIndex >= state.transactions.length) {
@@ -133,7 +145,23 @@ async function handleInteractiveSteps(msg, user, userState) {
             }
 
             const txToDelete = state.transactions[choiceIndex];
-            
+
+            // 1. Ambil saldo user saat ini
+            const { data: userData, error: userError } = await supabase.from('users').select('saldo').eq('id', user.id).single();
+            if (userError) {
+                await logActivity(user.id, userNumber, 'Error Hapus', `Gagal mengambil saldo user: ${userError.message}`);
+                msg.reply("Maaf, gagal mengambil data saldo untuk proses penghapusan.");
+                delete userState[userNumber];
+                return;
+            }
+            const currentBalance = userData.saldo;
+
+            // 2. Hitung saldo baru
+            const nominalToDelete = txToDelete.nominal;
+            const tipeToDelete = txToDelete.kategori.tipe;
+            const newBalance = tipeToDelete === 'INCOME' ? currentBalance - nominalToDelete : currentBalance + nominalToDelete;
+
+            // 3. Hapus transaksi DARI database
             const { error: singleDeleteError } = await supabase
                 .from('transaksi')
                 .delete()
@@ -142,15 +170,29 @@ async function handleInteractiveSteps(msg, user, userState) {
             if (singleDeleteError) {
                 await logActivity(user.id, userNumber, 'Error Hapus Transaksi', `ID: ${txToDelete.id}, Error: ${singleDeleteError.message}`);
                 msg.reply("Maaf, terjadi kesalahan saat menghapus transaksi. Silakan coba lagi.");
+                delete userState[userNumber];
+                return;
+            }
+            
+            // 4. Update saldo di tabel 'users'
+            const { error: updateBalanceError } = await supabase
+                .from('users')
+                .update({ saldo: newBalance })
+                .eq('id', user.id);
+            
+            if (updateBalanceError) {
+                 await logActivity(user.id, userNumber, 'KRITIS: Gagal Update Saldo (Hapus)', `Hapus Tx berhasil, saldo gagal. Error: ${updateBalanceError.message}`);
+                 msg.reply("✅ Transaksi berhasil dihapus, namun ada masalah saat mengembalikan saldo Anda.");
             } else {
-                await logActivity(user.id, userNumber, 'Sukses Hapus Transaksi', `ID: ${txToDelete.id}, Detail: ${JSON.stringify(txToDelete)}`);
-                msg.reply(`✅ Transaksi "${txToDelete.kategori.nama_kategori} - ${formatCurrency(txToDelete.nominal)}" berhasil dihapus.`);
+                await logActivity(user.id, userNumber, 'Sukses Hapus Transaksi', `ID: ${txToDelete.id}, Saldo Dikembalikan: ${newBalance}`);
+                msg.reply(`✅ Transaksi "${txToDelete.kategori.nama_kategori} - ${formatCurrency(txToDelete.nominal)}" berhasil dihapus.\n\n💰 *Saldo Baru Anda:* ${formatCurrency(newBalance)}`);
             }
 
             delete userState[userNumber];
             break;
 
         case 'awaiting_edit_choice':
+            // ... (Tidak ada perubahan)
             if (!['1', '2', '3'].includes(messageBody)) {
                 await logActivity(user.id, userNumber, 'Gagal Edit', `Pilihan tidak valid: ${messageBody}`);
                 msg.reply("Pilihan tidak valid. Harap kirim angka 1, 2, atau 3.");
@@ -169,6 +211,7 @@ async function handleInteractiveSteps(msg, user, userState) {
             break;
 
         case 'awaiting_new_nominal':
+            // ... (Tidak ada perubahan)
             const newNominal = parseNominal(messageBody);
             if (newNominal === null) {
                 await logActivity(user.id, userNumber, 'Gagal Edit', `Nominal baru tidak valid: ${messageBody}`);
@@ -187,6 +230,7 @@ async function handleInteractiveSteps(msg, user, userState) {
             break;
 
         case 'awaiting_new_catatan':
+            // ... (Tidak ada perubahan)
             state.data.new_catatan = messageBody === '-' ? null : messageBody;
             await logActivity(user.id, userNumber, 'Proses Edit', `Catatan baru diterima: ${state.data.new_catatan || 'dihapus'}`);
             await finalizeEdit(msg, userNumber, state.data, userState);
