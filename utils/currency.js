@@ -34,15 +34,17 @@ function parseNominal(nominalStr) {
 }
 
 /**
- * Membuat entri rincian bergaya pohon untuk laporan keuangan, sesuai format yang diminta.
+ * Membuat baris tabel teks untuk laporan keuangan.
  * @param {string} kategori Nama kategori.
  * @param {number} nominal Jumlah nominal.
  * @param {string|null} catatan Catatan transaksi.
  * @param {string|null} tanggalString String tanggal dari database.
  * @param {'time'|'date'} format Tipe format waktu yang ditampilkan.
- * @returns {string} String multi-baris yang sudah diformat.
+ * @returns {string} Baris teks yang sudah diformat.
  */
 function createTableRow(kategori, nominal, catatan, tanggalString, format = 'time') {
+    const KATEGORI_WIDTH = 12;
+    const NOMINAL_WIDTH = 15;
     let datePrefix = '';
 
     if (tanggalString) {
@@ -58,21 +60,14 @@ function createTableRow(kategori, nominal, catatan, tanggalString, format = 'tim
         }
     }
     
-    // Baris utama dengan tanggal dan kategori
-    const mainLine = `${datePrefix}${kategori}`;
-    const formattedNominal = formatCurrency(nominal);
+    // Kolom kiri (Tanggal + Kategori)
+    let leftCol = `${datePrefix}${kategori}`;
+    leftCol = leftCol.padEnd(KATEGORI_WIDTH + 8); // 8 untuk [HH:mm] atau [DD/MM] + spasi
 
-    if (catatan && catatan.trim() !== '') {
-        // Jika ada catatan, buat struktur dua cabang seperti di gambar
-        // Karakter '├' dan '└' akan membentuk struktur pohon di font monospace (seperti di WA)
-        const nominalLine = `  ├─ ${formattedNominal}`;
-        const catatanLine = `  └─ ${catatan}`;
-        return `${mainLine}\n${nominalLine}\n${catatanLine}`;
-    } else {
-        // Jika tidak ada catatan, buat struktur satu cabang untuk nominal
-        const nominalLine = `  └─ ${formattedNominal}`;
-        return `${mainLine}\n${nominalLine}`;
-    }
+    // Kolom tengah (Nominal)
+    let nominalCol = formatCurrency(nominal).padEnd(NOMINAL_WIDTH);
+
+    return `${leftCol}${nominalCol}${catatan || ''}`;
 }
 
 module.exports = { formatCurrency, parseNominal, createTableRow };

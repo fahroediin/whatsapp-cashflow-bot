@@ -126,7 +126,8 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             const incomeDetailsDaily = [], expenseDetailsDaily = [];
 
             dailyTransactions.forEach(t => {
-                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'time');
+                // --- INI BARIS YANG DIUBAH ---
+                const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'date');
                 if (t.kategori.tipe === 'INCOME') {
                     totalPemasukanHarian += t.nominal;
                     incomeDetailsDaily.push(rowText);
