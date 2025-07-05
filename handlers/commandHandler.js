@@ -171,7 +171,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
                     `--------------------\n` +
                     `✨ *Selisih (Periode Ini):*\n   *${formatCurrency(selisihPeriode)}*\n` +
                     `--------------------\n\n` +
-                    `💰 *SALDO ANDA:*\n   *${formatCurrency(totalSaldo)}*\n`;
+                    `💰 *Saldo Anda:*\n   *${formatCurrency(totalSaldo)}*\n`;
     
     if (transactions.length > 0) {
         if (incomeDetails.length > 0) { reportText += `\n*RINCIAN PEMASUKAN* 📥\n` + "```\n" + incomeDetails.join('\n') + "\n```"; }
