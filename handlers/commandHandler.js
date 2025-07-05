@@ -126,7 +126,8 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             const incomeDetailsDaily = [], expenseDetailsDaily = [];
 
             dailyTransactions.forEach(t => {
-                // === KESALAHAN UTAMA ADA DI SINI, SEKARANG SUDAH DIPERBAIKI ===
+                // === PERBAIKAN FINAL DI SINI ===
+                // Mengubah 'time' menjadi 'date' untuk konsistensi
                 const rowText = createTableRow(t.kategori.nama_kategori, t.nominal, t.catatan, t.tanggal, 'date');
                 if (t.kategori.tipe === 'INCOME') {
                     totalPemasukanHarian += t.nominal;
@@ -254,6 +255,7 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
             break;
     }
 }
+
 
 // Edit (Tidak ada perubahan)
 async function handleEdit(msg, user, userState) {
