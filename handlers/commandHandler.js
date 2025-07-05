@@ -77,41 +77,38 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
     };
     const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
     
-    const now = new Date();
-    const timeZone = 'Asia/Jakarta';
+    // Fungsi helper lokal untuk format tanggal ke YYYY-MM-DD HH:MM:SS
+    function toSupabaseTimestamp(date) {
+        const pad = (num) => String(num).padStart(2, '0');
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    }
 
+    const now = new Date();
     let startDate, endDate, reportTitle, dateFormatType = 'date';
     
-    // Dapatkan bagian tanggal yang benar berdasarkan zona waktu Jakarta
-    const { year: currentYear, month: currentMonth, day: currentDay } = getLocalDateParts(now, timeZone);
-    const dateInJakarta = new Date(currentYear, currentMonth, currentDay);
-    
     if (periode === 'harian') {
-        startDate = new Date(dateInJakarta.getFullYear(), dateInJakarta.getMonth(), dateInJakarta.getDate(), 0, 0, 0, 0);
-        endDate = new Date(dateInJakarta.getFullYear(), dateInJakarta.getMonth(), dateInJakarta.getDate(), 23, 59, 59, 999);
-        reportTitle = `Laporan Harian (${startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric', timeZone })})`;
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+        endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+        reportTitle = `Laporan Harian (${startDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })})`;
     } else if (periode === 'mingguan') {
-        const dayOfWeek = dateInJakarta.getDay();
-        const firstDayOfWeek = dateInJakarta.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
-        startDate = new Date(dateInJakarta.setDate(firstDayOfWeek));
-        startDate.setHours(0,0,0,0);
-        endDate = new Date(startDate);
-        endDate.setDate(startDate.getDate() + 6);
-        endDate.setHours(23,59,59,999);
+        const dayOfWeek = now.getDay();
+        const firstDayOfWeek = now.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+        startDate = new Date(now.getFullYear(), now.getMonth(), firstDayOfWeek, 0, 0, 0, 0);
+        endDate = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate() + 6, 23, 59, 59, 999);
         reportTitle = "Laporan Mingguan";
     } else if (periode === 'bulanan') {
         const monthArg = parts[2];
-        const yearArg = parts[3] ? parseInt(parts[3], 10) : currentYear;
-        let targetYear = isNaN(yearArg) ? currentYear : yearArg;
-        let targetMonth = monthArg ? (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12 ? monthArg - 1 : monthMap[monthArg.toLowerCase()]) : currentMonth;
+        const yearArg = parts[3] ? parseInt(parts[3], 10) : now.getFullYear();
+        let targetYear = isNaN(yearArg) ? now.getFullYear() : yearArg;
+        let targetMonth = monthArg ? (!isNaN(monthArg) && monthArg >= 1 && monthArg <= 12 ? monthArg - 1 : monthMap[monthArg.toLowerCase()]) : now.getMonth();
         if (targetMonth === undefined) { msg.reply(`❌ Bulan "${monthArg}" tidak valid.`); return; }
-        startDate = new Date(targetYear, targetMonth, 1);
+        startDate = new Date(targetYear, targetMonth, 1, 0, 0, 0, 0);
         endDate = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59, 999);
         reportTitle = `Laporan Bulanan (${monthNames[startDate.getMonth()]} ${startDate.getFullYear()})`;
     } else if (periode === 'tahunan') {
-        const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : currentYear;
+        const targetAnnualYear = parts[2] ? parseInt(parts[2], 10) : now.getFullYear();
         if (isNaN(targetAnnualYear)) { msg.reply(`❌ Format tahun "${parts[2]}" tidak valid.`); return; }
-        startDate = new Date(targetAnnualYear, 0, 1);
+        startDate = new Date(targetAnnualYear, 0, 1, 0, 0, 0, 0);
         endDate = new Date(targetAnnualYear, 11, 31, 23, 59, 59, 999);
         reportTitle = `Laporan Tahunan (${targetAnnualYear})`;
     } else {
@@ -128,19 +125,30 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
     }
     const totalSaldo = userData.saldo || 0;
 
-    const { data: transactions, error } = await supabase
-        .from('transaksi')
-        .select(`tanggal, nominal, catatan, kategori (nama_kategori, tipe)`)
-        .eq('id_user', user.id)
-        .gte('tanggal', startDate.toISOString())
-        .lte('tanggal', endDate.toISOString())
-        .order('tanggal', { ascending: false });
+    // --- PERUBAHAN UTAMA: Panggil RPC Function ---
+    const { data: rpcData, error: rpcError } = await supabase.rpc('get_transactions_by_period', {
+        user_id_param: user.id,
+        start_date_param: toSupabaseTimestamp(startDate),
+        end_date_param: toSupabaseTimestamp(endDate)
+    });
 
-    if (error) { 
-        await logActivity(user.id, msg.from, 'Error Cek Laporan', error.message); 
-        msg.reply("Gagal mengambil data laporan."); 
+    if (rpcError) { 
+        await logActivity(user.id, msg.from, 'Error Cek Laporan (RPC)', rpcError.message); 
+        console.error("Supabase RPC error:", rpcError);
+        msg.reply("Gagal mengambil data laporan (RPC)."); 
         return; 
     }
+    
+    // Data dari RPC perlu sedikit diubah formatnya agar sama seperti SELECT biasa
+    const transactions = rpcData.map(t => ({
+        tanggal: t.tanggal,
+        nominal: t.nominal,
+        catatan: t.catatan,
+        kategori: {
+            nama_kategori: t.kategori_nama,
+            tipe: t.kategori_tipe
+        }
+    }));
     
     let totalPemasukanPeriode = 0, totalPengeluaranPeriode = 0;
     const incomeDetails = [], expenseDetails = [];
@@ -174,7 +182,6 @@ async function handleCekKeuangan(msg, user, parts, originalMessage) {
 
     msg.reply(reportText);
 }
-
 
 // ... sisa file tetap sama ...
 async function handleEdit(msg, user, userState) {
